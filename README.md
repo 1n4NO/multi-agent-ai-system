@@ -157,7 +157,7 @@ src/
 ### 1. Clone
 
 ```bash
-git clone https://github.com/1n4NO/multi-agent-ai.git
+git clone https://github.com/1n4NO/multi-agent-ai-system.git
 cd multi-agent-ai
 ```
 
