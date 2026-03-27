@@ -4,29 +4,25 @@ import { writerAgent } from "@/lib/agents/writer";
 import { criticAgent } from "@/lib/agents/critic";
 import { saveToMemory } from "@/lib/memory/store";
 
-export async function runAgents(goal: string) {
-  // 1. Planning
+type StepCallback = (data: any) => void;
+
+export async function runAgents(goal: string, onStep?: StepCallback) {
+  onStep?.({ step: "planner_start" });
+
   const plan = await plannerAgent(goal);
+  onStep?.({ step: "planner_done", data: plan });
 
-  // 2. Parallel research (future scalable)
-  const researchPromise = researcherAgent(plan);
+  const research = await researcherAgent(plan);
+  onStep?.({ step: "research_done", data: research });
 
-  const research = await researchPromise;
-
-  // 3. Writing
   const draft = await writerAgent(plan, research);
+  onStep?.({ step: "writer_done", data: draft });
 
-  // 4. Critic
   const finalOutput = await criticAgent(draft);
+  onStep?.({ step: "critic_done", data: finalOutput });
 
-  const result = {
-    plan,
-    research,
-    draft,
-    final: finalOutput,
-  };
+  const result = { plan, research, draft, final: finalOutput };
 
-  // 5. Save memory
   saveToMemory(goal, result);
 
   return result;
