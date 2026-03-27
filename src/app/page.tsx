@@ -1,6 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Container,
+  TextField,
+  Button,
+  Typography,
+  Paper,
+  Box,
+} from "@mui/material";
 import AgentGraph from "@/components/AgentGraph";
 
 export default function Home() {
@@ -31,7 +39,6 @@ export default function Home() {
         if (line.startsWith("data: ")) {
           const parsed = JSON.parse(line.replace("data: ", ""));
 
-          // 🔥 track current step
           if (parsed.step) {
             setCurrentStep(parsed.step);
           }
@@ -43,26 +50,35 @@ export default function Home() {
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Multi-Agent AI</h1>
+    <Container maxWidth="md" style={{ marginTop: 40 }}>
+      <Typography variant="h4" gutterBottom>
+        Multi-Agent AI System
+      </Typography>
 
-      <input
-        value={goal}
-        onChange={(e) => setGoal(e.target.value)}
-        placeholder="Enter goal..."
-      />
+      <Paper style={{ padding: 20, marginBottom: 20 }}>
+        <TextField
+          fullWidth
+          label="Enter your goal"
+          value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+        />
 
-      <button onClick={runAgents}>Run</button>
+        <Box mt={2}>
+          <Button variant="contained" onClick={runAgents}>
+            Run Agents
+          </Button>
+        </Box>
+      </Paper>
 
-      {/* 🔥 Agent Graph */}
+      {/* 🔥 Graph */}
       <AgentGraph currentStep={currentStep} />
 
-      {/* Logs */}
-      <div style={{ marginTop: 20 }}>
+      {/* Logs Panel */}
+      <Paper style={{ padding: 20, marginTop: 20, maxHeight: 300, overflow: "auto" }}>
         {logs.map((log, i) => (
           <pre key={i}>{JSON.stringify(log, null, 2)}</pre>
         ))}
-      </div>
-    </div>
+      </Paper>
+    </Container>
   );
 }
