@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { plannerAgent } from "@/lib/agents/planner";
+import { runAgents } from "@/lib/orchestrator/runAgents";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,13 +12,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const plan = await plannerAgent(goal);
+    const result = await runAgents(goal);
 
     return NextResponse.json({
       success: true,
-      data: {
-        plan,
-      },
+      data: result,
     });
   } catch (error) {
     return NextResponse.json(
