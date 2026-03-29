@@ -16,6 +16,7 @@
     "axios": "^1.13.6",
     "dagre": "^0.8.5",
     "jspdf": "^4.2.1",
+    "lodash": "^4.17.23",
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -25,6 +26,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/lodash": "^4.17.24",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

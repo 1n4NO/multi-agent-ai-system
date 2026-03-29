@@ -70,7 +70,10 @@ function reducer(state: State, action: Action): State {
     case "PLANNER_DONE":
       return {
         ...state,
-        plannerOutput: action.data,
+        plannerOutput: {
+    	raw: action.data,
+    	researchers: action?.data?.researchers.map((item: any) => item.topic),
+  },
         lastEvent: action,
       };
 
