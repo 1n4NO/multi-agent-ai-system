@@ -13,15 +13,15 @@ import {
 import { copyToClipboard, exportToPDF } from "@/lib/utils/export";
 import AgentGraph from "@/components/AgentGraph";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { useGraphState } from "@/hooks/useGraphState";
 
 export default function Home() {
   const [goal, setGoal] = useState("");
   const [logs, setLogs] = useState<any[]>([]);
-  const [currentStep, setCurrentStep] = useState("");
+  const { state, dispatch } = useGraphState();
 
   const runAgents = async () => {
     setLogs([]);
-    setCurrentStep("");
 
     const res = await fetch("/api/agent", {
       method: "POST",
@@ -42,11 +42,53 @@ export default function Home() {
         if (line.startsWith("data: ")) {
           const parsed = JSON.parse(line.replace("data: ", ""));
 
-          if (parsed.step) {
-            setCurrentStep(parsed.step);
+          setLogs((prev) => [...prev, parsed]);
+
+          const step = parsed.step;
+
+          // 🔥 Node lifecycle updates
+          if (step?.includes("_start")) {
+            const nodeId = step.replace("_start", "");
+            dispatch({
+              type: "NODE_START",
+              nodeId,
+              attempt: parsed.attempt,
+            });
           }
 
-          setLogs((prev) => [...prev, parsed]);
+          if (step?.includes("_done")) {
+            const nodeId = step.replace("_done", "");
+            dispatch({ type: "NODE_DONE", nodeId });
+
+            // ✅ capture planner output
+            if (nodeId === "planner") {
+              const parsePlannerOutput = (text: string) => {
+				return text
+					.split(/\n\d+\.\s/) // split by numbered points
+					.map((item) => item.trim())
+					.filter(Boolean);
+				};
+
+				if (step === "planner_done") {
+				const raw = parsed.data;
+
+				const tasks = parsePlannerOutput(raw);
+
+				dispatch({
+					type: "PLANNER_DONE",
+					data: {
+					researchers: tasks.map((task: string) => ({
+						topic: task,
+					})),
+					},
+				});
+				}
+            }
+          }
+
+          if (step === "error") {
+            dispatch({ type: "NODE_FAIL", nodeId: "unknown" });
+          }
         }
       });
     }
@@ -56,7 +98,10 @@ export default function Home() {
 
   return (
     <Container maxWidth="md" style={{ marginTop: 40, paddingTop: 40 }}>
-      <Typography variant="h4" style={{ position: 'absolute', top: 20, left: 40, zIndex: 1 }}>
+      <Typography
+        variant="h4"
+        style={{ position: "absolute", top: 20, left: 40, zIndex: 1 }}
+      >
         Multi-Agent AI System
       </Typography>
 
@@ -76,10 +121,17 @@ export default function Home() {
       </Paper>
 
       {/* 🔥 Graph */}
-      <AgentGraph currentStep={currentStep} />
+      <AgentGraph graphState={state} />
 
       {/* Logs Panel */}
-      <Paper style={{ padding: 20, marginTop: 20, maxHeight: 300, overflow: "auto" }}>
+      <Paper
+        style={{
+          padding: 20,
+          marginTop: 20,
+          maxHeight: 300,
+          overflow: "auto",
+        }}
+      >
         {logs.map((log, i) => (
           <div key={i} style={{ marginBottom: 20 }}>
             {log.data && typeof log.data === "string" ? (
@@ -90,6 +142,7 @@ export default function Home() {
           </div>
         ))}
       </Paper>
+
       {finalResult && (
         <Stack direction="row" spacing={2} mt={2} justifyContent={"flex-end"}>
           <Button
