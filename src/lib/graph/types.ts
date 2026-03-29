@@ -2,15 +2,24 @@ export type NodeId = string;
 
 export type GraphNode = {
 	id: NodeId;
-	run: (input: any) => Promise<any>;
+	run: (state: GraphState) => Promise<any>;
 };
 
 export type Edge = {
 	from: NodeId;
 	to: NodeId;
+	condition?: (state: GraphState) => boolean;
 };
 
 export type Graph = {
 	nodes: Record<NodeId, GraphNode>;
 	edges: Edge[];
+};
+
+export type GraphState = {
+	goal: string;
+	data: Record<string, any>;
+	meta: {
+		attempts: Record<string, number>;
+	};
 };

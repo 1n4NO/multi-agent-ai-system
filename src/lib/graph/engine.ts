@@ -1,44 +1,46 @@
-import { Graph } from "./types";
+import { Graph, GraphState } from "./types";
 
 export async function executeGraph(
   graph: Graph,
-  initialInput: any,
+  initialState: GraphState,
   onStep?: (data: any) => void
 ) {
-  const results: Record<string, any> = {};
-  const visited = new Set<string>();
+  const state = initialState;
 
-  async function runNode(nodeId: string, input: any) {
-    if (visited.has(nodeId)) return results[nodeId];
-
+  async function runNode(nodeId: string): Promise<void> {
     const node = graph.nodes[nodeId];
 
-    onStep?.({ step: `${nodeId}_start` });
+    // track attempts
+    state.meta.attempts[nodeId] =
+      (state.meta.attempts[nodeId] || 0) + 1;
 
-    const output = await node.run(input);
+    onStep?.({
+      step: `${nodeId}_start`,
+      attempt: state.meta.attempts[nodeId],
+    });
 
-    results[nodeId] = output;
-    visited.add(nodeId);
+    const output = await node.run(state);
 
-    onStep?.({ step: `${nodeId}_done`, data: output });
+    state.data[nodeId] = output;
 
-    // find next nodes
-    const nextEdges = graph.edges.filter((e) => e.from === nodeId);
+    onStep?.({
+      step: `${nodeId}_done`,
+      data: output,
+    });
 
-    await Promise.all(
-      nextEdges.map((edge) =>
-        runNode(edge.to, {
-          ...results,
-          previous: output,
-        })
-      )
+    // find next edges with conditions
+    const nextEdges = graph.edges.filter(
+      (e) =>
+        e.from === nodeId &&
+        (!e.condition || e.condition(state))
     );
 
-    return output;
+    for (const edge of nextEdges) {
+      await runNode(edge.to);
+    }
   }
 
-  // start from root node
-  await runNode("planner", initialInput);
+  await runNode("planner");
 
-  return results;
+  return state.data;
 }
