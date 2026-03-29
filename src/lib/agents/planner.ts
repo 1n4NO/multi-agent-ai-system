@@ -5,27 +5,31 @@ export async function plannerAgent(userGoal: string): Promise<string> {
   const memory = getRecentMemory();
 
   const prompt = `
-You are a PLANNER agent.
+		You are a PLANNER agent.
 
-Previous context:
-${JSON.stringify(memory, null, 2)}
+		Break the goal into EXACTLY numbered steps.
 
-Now plan the new goal.
+		STRICT FORMAT:
+		1. Step one
+		2. Step two
+		3. Step three
 
-Goal:
-${userGoal}
+		No bullet points.
+		No extra text.
 
-Rules:
-- Avoid repeating previous strategies
-- Be concise
-- Max 6 steps
+		Previous context:
+		${JSON.stringify(memory, null, 2)}
 
-Format your response in clean markdown:
-- Use headings
-- Use numbered lists
-- Use bold where needed
-- Keep it readable
-`;
+		Now plan the new goal.
+
+		Goal:
+		${userGoal}
+
+		Rules:
+		- Avoid repeating previous strategies
+		- Be concise
+		- Max 6 steps
+	`;
 
   return await callLLM(prompt);
 }

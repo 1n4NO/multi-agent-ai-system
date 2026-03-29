@@ -1,26 +1,40 @@
 import { callLLM } from "@/lib/llm/ollama";
 
-export async function criticAgent(content: string): Promise<string> {
-  const prompt = `
+export async function criticAgent(
+	goal: string,
+	plan: string,
+	content: string
+): Promise<string> {
+	const prompt = `
 You are a CRITIC agent.
 
-Improve the content below:
-- Fix clarity
-- Improve structure
-- Remove fluff
-- Make it more actionable
+Evaluate the solution:
 
-Format your response in clean markdown:
-- Use headings
-- Use numbered lists
-- Use bold where needed
-- Keep it readable
+Goal:
+${goal}
 
-Content:
+Plan:
+${plan}
+
+Solution:
 ${content}
 
-Return ONLY the improved version.
+Tasks:
+1. Improve the solution if needed
+2. Give a confidence score (0–100%)
+3. Justify the score briefly
+
+Output format:
+
+## Final Answer
+<improved solution>
+
+## Confidence Score
+<number>%
+
+## Reason
+<short explanation>
 `;
 
-  return await callLLM(prompt);
+	return await callLLM(prompt);
 }

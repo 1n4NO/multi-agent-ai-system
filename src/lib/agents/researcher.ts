@@ -1,28 +1,21 @@
 import { callLLM } from "@/lib/llm/ollama";
 
-export async function researcherAgent(plan: string): Promise<string> {
-  const prompt = `
-You are a RESEARCHER agent.
+export async function researcherAgent(task: string): Promise<string> {
+	const prompt = `
+You are a RESEARCH AGENT.
 
-Given the plan below, provide useful insights, facts, and strategies
-to help execute it.
+Task:
+${task}
 
-Plan:
-${plan}
+Perform deep research:
+- Key insights
+- Practical strategies
+- Real-world considerations
 
-Rules:
-- Be informative
-- Use bullet points
-- Add practical insights
-
-Format your response in clean markdown:
-- Use headings
-- Use numbered lists
-- Use bold where needed
-- Keep it readable
-
-Output:
+Format:
+- Bullet points
+- Concise but useful
 `;
 
-  return await callLLM(prompt);
+	return await callLLM(prompt);
 }
