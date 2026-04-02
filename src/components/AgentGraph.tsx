@@ -52,10 +52,15 @@ export default function AgentGraph({ graphState }: Props) {
 	const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
 	const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
 
+	const isResearchNode = (id: string) => id.startsWith("research_");
+
 	const getNodeStatus = (id: string) => {
-		if (failedNodes.has(id)) return "failed";
-		if (completedNodes.has(id)) return "completed";
+		if (failedNodes.has(id) || (failedNodes.has("researchers") && isResearchNode(id))) return "failed";
+		if (completedNodes.has(id) || (completedNodes.has("researchers") && isResearchNode(id))) return "completed";
+
 		if (activeNode === id) return "active";
+		if (activeNode === "researchers" && isResearchNode(id)) return "active";
+
 		return "idle";
 	};
 
@@ -81,13 +86,15 @@ export default function AgentGraph({ graphState }: Props) {
 	];
 
 	// Dynamic researcher nodes
-	const researchItems =
-		graphState?.plannerOutput?.researchers || [];
+	const researchItems = graphState?.plannerOutput?.researchers || [];
 
 	const dynamicResearchNodes: Node[] = researchItems.map(
-		(_: any, index: number) => ({
+		(topic: string, index: number) => ({
 			id: `research_${index}`,
-			data: { label: `Research ${index + 1}` },
+			data: {
+				label: `Researcher ${index + 1}`,
+				topic,
+			},
 			position: { x: 0, y: 0 },
 		})
 	);
@@ -95,9 +102,8 @@ export default function AgentGraph({ graphState }: Props) {
 	const nodes = [...baseNodes, ...dynamicResearchNodes];
 
 	const edges: Edge[] = [
-		{ id: "e1", source: "planner", target: "synthesizer" },
-		{ id: "e2", source: "synthesizer", target: "writer" },
-		{ id: "e3", source: "writer", target: "critic" },
+		{ id: "e1", source: "synthesizer", target: "writer" },
+		{ id: "e2", source: "writer", target: "critic" },
 	];
 
 	researchItems.forEach((_: any, index: number) => {
@@ -159,17 +165,43 @@ export default function AgentGraph({ graphState }: Props) {
 	}, [styledNodes, layouted.edges]);
 
 	return (
-		<div style={{ height: 600 }}>
-			<ReactFlow
-				nodes={rfNodes}
-				edges={rfEdges}
-				onNodesChange={onNodesChange}
-				onEdgesChange={onEdgesChange}
-				onInit={setRfInstance}
+		<div style={{ display: "flex", height: 600, gap: 16 }}>
+			<div style={{ flex: 1, minWidth: 0 }}>
+				<ReactFlow
+					nodes={rfNodes}
+					edges={rfEdges}
+					onNodesChange={onNodesChange}
+					onEdgesChange={onEdgesChange}
+					onInit={setRfInstance}
+				>
+					<Background />
+					<Controls />
+				</ReactFlow>
+			</div>
+
+			<div
+				style={{
+					width: 260,
+					padding: 12,
+					borderLeft: "1px solid #ddd",
+					overflowY: "auto",
+					background: "#fafafa",
+					color: "#333"
+				}}
 			>
-				<Background />
-				<Controls />
-			</ReactFlow>
+				<h3 style={{ marginTop: 0 }}>Researchers</h3>
+				{researchItems.length === 0 ? (
+					<p>No researchers yet</p>
+				) : (
+					<ul style={{ paddingLeft: 18, margin: 0 }}>
+						{researchItems.map((topic: string, index: number) => (
+							<li key={index} style={{ marginBottom: 8 }}>
+								<strong>Researcher {index + 1}:</strong> {topic}
+							</li>
+						))}
+					</ul>
+				)}
+			</div>
 		</div>
 	);
 }
