@@ -60,6 +60,7 @@ export default function Home() {
 				const lines = chunk.split("\n\n");
 
 				const newLogs: any[] = [];
+				const actions: any[] = [];
 
 				lines.forEach((line) => {
 					if (line.startsWith("data: ")) {
@@ -69,9 +70,9 @@ export default function Home() {
 
 						const step = parsed.step;
 
-						// 🔥 STREAMING
+						// 🔥 STREAM
 						if (step === "stream") {
-							dispatch({
+							actions.push({
 								type: "NODE_STREAM",
 								nodeId: parsed.nodeId,
 								content: parsed.content,
@@ -81,7 +82,7 @@ export default function Home() {
 
 						// 🔥 PROGRESS
 						if (step === "NODE_PROGRESS") {
-							dispatch({
+							actions.push({
 								type: "NODE_PROGRESS",
 								nodeId: parsed.nodeId,
 								progress: parsed.progress ?? 0,
@@ -91,10 +92,9 @@ export default function Home() {
 
 						// 🔥 START
 						if (step?.includes("_start")) {
-							const nodeId = step.replace("_start", "");
-							dispatch({
+							actions.push({
 								type: "NODE_START",
-								nodeId,
+								nodeId: step.replace("_start", ""),
 								attempt: parsed.attempt,
 							});
 						}
@@ -102,19 +102,22 @@ export default function Home() {
 						// 🔥 DONE
 						if (step?.includes("_done")) {
 							const nodeId = step.replace("_done", "");
-							dispatch({ type: "NODE_DONE", nodeId });
+
+							actions.push({
+								type: "NODE_DONE",
+								nodeId,
+							});
 
 							if (nodeId === "planner") {
-								const parsePlannerOutput = (text: string) => {
-									return text
+								const parsePlannerOutput = (text: string) =>
+									text
 										.split(/\n\d+\.\s/)
 										.map((item) => item.trim())
 										.filter(Boolean);
-								};
 
 								const tasks = parsePlannerOutput(parsed.data);
 
-								dispatch({
+								actions.push({
 									type: "PLANNER_DONE",
 									data: {
 										researchers: tasks.map((t: string) => ({
@@ -131,9 +134,16 @@ export default function Home() {
 					}
 				});
 
-				// 🔥 SINGLE STATE UPDATE (important)
+				// ✅ APPLY ONCE
 				if (newLogs.length > 0) {
 					setLogs((prev) => [...prev, ...newLogs]);
+				}
+
+				// ✅ DISPATCH IN BATCH (important)
+				if (actions.length > 0) {
+					setTimeout(() => {
+						actions.forEach((action) => dispatch(action));
+					}, 0);
 				}
 			}
 		} catch (err: any) {
