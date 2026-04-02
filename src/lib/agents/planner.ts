@@ -29,6 +29,7 @@ export async function plannerAgent(userGoal: string): Promise<string> {
 		- Avoid repeating previous strategies
 		- Be concise
 		- Max 6 steps
+		Do not repeat the topic. Provide only the plan in the specified format.
 	`;
 
   return await callLLM(prompt);

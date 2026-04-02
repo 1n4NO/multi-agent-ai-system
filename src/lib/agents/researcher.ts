@@ -4,17 +4,17 @@ export async function researcherAgent(task: string): Promise<string> {
 	const prompt = `
 You are a RESEARCH AGENT.
 
-Task:
-${task}
+Research the following topic and provide deep insights based on the provided data.
 
-Perform deep research:
+Topic: ${task}
+
+Focus on:
 - Key insights
 - Practical strategies
 - Real-world considerations
 
-Format:
-- Bullet points
-- Concise but useful
+Do not repeat the topic or provide a plan. Provide research findings in bullet points.
+Be concise but useful.
 `;
 
 	return await callLLM(prompt);
