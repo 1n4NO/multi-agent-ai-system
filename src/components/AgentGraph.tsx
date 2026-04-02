@@ -57,6 +57,7 @@ export default function AgentGraph({ graphState }: Props) {
 	>({});
 	const thoughtIdCounter = useRef(0);
 	const streamingContent = graphState.streamingContent || {};
+	const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
 
 	const isResearchNode = (id: string) => id.startsWith("research_");
@@ -173,7 +174,15 @@ export default function AgentGraph({ graphState }: Props) {
 	const styledNodes = useMemo(() => {
 		return layouted.nodes.map((node) => {
 			const status = getNodeStatus(node.id);
-			const progress = node.data?.progress ?? (isResearchNode(node.id) ? (researcherProgress?.[node.id] ?? 0) : undefined);
+
+			const progress =
+				node.data?.progress ??
+				(isResearchNode(node.id)
+					? researcherProgress?.[node.id] ?? 0
+					: undefined);
+
+			// 🔥 ADD THIS
+			const isSelected = node.id === selectedNode;
 
 			return {
 				...node,
@@ -181,10 +190,20 @@ export default function AgentGraph({ graphState }: Props) {
 					...getNodeStyle(status, progress),
 					borderRadius: 10,
 					padding: 10,
+					border: isSelected ? "3px solid #1976d2" : "1px solid #ccc",
+					boxShadow: isSelected ? "0 0 10px rgba(25,118,210,0.4)" : "none",
 				},
 			};
 		});
-	}, [layouted.nodes, activeNode, activeNodes, completedNodes, failedNodes, researcherProgress]);
+	}, [
+		layouted.nodes,
+		activeNode,
+		activeNodes,
+		completedNodes,
+		failedNodes,
+		researcherProgress,
+		selectedNode, // 🔥 IMPORTANT: add dependency
+	]);
 
 	useEffect(() => {
 		if (!rfInstance) return;
@@ -289,13 +308,14 @@ export default function AgentGraph({ graphState }: Props) {
 	}, [streamingContent]);
 
 	return (
-		<div style={{ display: "flex", flex: 1, minHeight: 500 }}>
+		<div style={{ display: "flex", flex: 1, minHeight: "calc(100vh - 200px)" }}>
 			{/* 🔥 GRAPH PANEL */}
 			<div style={{ flex: 2, minWidth: 0 }}>
 				<ReactFlow
 					nodes={rfNodes}
 					edges={rfEdges}
 					onInit={setRfInstance}
+					onNodeClick={(_, node) => setSelectedNode(node.id)}
 				>
 					<Background />
 					<Controls />
@@ -323,7 +343,7 @@ export default function AgentGraph({ graphState }: Props) {
 						maxHeight: "calc(100vh - 200px)",
 					}}
 				>
-					<h3 style={{ marginTop: 0 }}>Researchers</h3>
+					<h3 style={{ marginBottom: 20 }}>Researchers</h3>
 
 					{researchItems.length === 0 ? (
 						<p>No researchers yet</p>
@@ -387,10 +407,44 @@ export default function AgentGraph({ graphState }: Props) {
 						maxHeight: "calc(100vh - 200px)",
 					}}
 				>
-					<h3 style={{ marginTop: 0 }}>Agent Thoughts</h3>
+					<h3 style={{ marginTop: 0 }}>
+						Agent Thoughts
+					</h3>
+					{selectedNode ? (
+						<div>
+							<h3 style={{ marginTop: 20, marginBottom: 10 }}>
+								{formatNodeLabel(selectedNode)}
+							</h3>
 
-					{Object.keys(thoughts).length === 0 ? (
-						<p style={{ fontSize: 12, color: "#666" }}>
+							<div
+								style={{
+									fontSize: 12,
+									background: "#fff",
+									border: "1px solid #ddd",
+									borderRadius: 6,
+									padding: 10,
+									whiteSpace: "pre-wrap",
+									lineHeight: 1.5,
+								}}
+							>
+								{streamingContent[selectedNode] ||
+									"No reasoning yet..."}
+							</div>
+
+							<button
+								onClick={() => setSelectedNode(null)}
+								style={{
+									marginTop: 10,
+									fontSize: 12,
+									padding: "4px 8px",
+									cursor: "pointer",
+								}}
+							>
+								← Back to Thoughts
+							</button>
+						</div>
+					) : Object.keys(thoughts).length === 0 ? (
+						<p style={{ fontSize: 12, color: "#666", marginTop: 20 }}>
 							Waiting for agents...
 						</p>
 					) : (
@@ -400,13 +454,22 @@ export default function AgentGraph({ graphState }: Props) {
 								.map(([key, t]) => (
 									<div
 										key={key}
+										onClick={() => setSelectedNode(key)}
 										style={{
 											fontSize: 12,
 											padding: "6px 8px",
 											borderRadius: 6,
 											background: "#fff",
 											border: "1px solid #ddd",
+											cursor: "pointer",
+											transition: "all 0.2s",
 										}}
+										onMouseEnter={(e) =>
+											(e.currentTarget.style.background = "#f0f0f0")
+										}
+										onMouseLeave={(e) =>
+											(e.currentTarget.style.background = "#fff")
+										}
 									>
 										{t.text}
 									</div>

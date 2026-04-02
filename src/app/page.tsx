@@ -126,7 +126,7 @@ export default function Home() {
 				Multi-Agent AI System
 			</Typography>
 
-			<Paper sx={{ p: 2, mb: 2 }}>
+			<Paper sx={{ p: 1, mb: 2 }}>
 				<Stack direction="row" spacing={2}>
 					<TextField
 						fullWidth
@@ -134,7 +134,14 @@ export default function Home() {
 						value={goal}
 						onChange={(e) => setGoal(e.target.value)}
 					/>
-					<Button variant="contained" onClick={runAgents}>
+					<Button
+						variant="contained"
+						onClick={runAgents}
+						sx={{
+							whiteSpace: "nowrap",
+							px: 3, // horizontal padding
+						}}
+					>
 						Run Agents
 					</Button>
 				</Stack>
@@ -147,7 +154,7 @@ export default function Home() {
 				</ReactFlowProvider>
 
 				{/* Logs */}
-				<Paper sx={{ p: 2, maxHeight: 300, overflow: "auto" }}>
+				{/* <Paper sx={{ p: 2, maxHeight: 300, overflow: "auto" }}>
 					{logs.map((log, i) => (
 						<div key={i} style={{ marginBottom: 20 }}>
 							{log.data && typeof log.data === "string" ? (
@@ -157,7 +164,7 @@ export default function Home() {
 							)}
 						</div>
 					))}
-				</Paper>
+				</Paper> */}
 
 				{/* Actions */}
 				{finalResult && (
