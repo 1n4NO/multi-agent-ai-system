@@ -1,7 +1,7 @@
 "use client";
 
 import ReactFlow, { Background, Controls, Node, Edge, useNodesState, useEdgesState } from "reactflow";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import "reactflow/dist/style.css";
 import { useMemo } from "react";
 import dagre from "dagre";
@@ -52,7 +52,11 @@ export default function AgentGraph({ graphState }: Props) {
 	const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
 	const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
 	const [visibleResearchCount, setVisibleResearchCount] = useState(0);
-	
+	const [thoughts, setThoughts] = useState<
+		{ id: string; text: string; timestamp: number }[]
+	>([]);
+	const thoughtIdCounter = useRef(0);
+
 
 	const isResearchNode = (id: string) => id.startsWith("research_");
 
@@ -100,19 +104,19 @@ export default function AgentGraph({ graphState }: Props) {
 	const researchItems = graphState?.plannerOutput?.researchers || [];
 
 	const dynamicResearchNodes: Node[] = researchItems
-	.slice(0, visibleResearchCount)
-	.map((topic: string, index: number) => {
-		const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
-		return {
-			id: `research_${index}`,
-			data: {
-				label: `Researcher ${index + 1}`,
-				topic,
-				progress,
-			},
-			position: { x: 0, y: 0 },
-		};
-	});
+		.slice(0, visibleResearchCount)
+		.map((topic: string, index: number) => {
+			const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
+			return {
+				id: `research_${index}`,
+				data: {
+					label: `Researcher ${index + 1}`,
+					topic,
+					progress,
+				},
+				position: { x: 0, y: 0 },
+			};
+		});
 
 	const nodes = [...baseNodes, ...dynamicResearchNodes];
 
@@ -136,30 +140,30 @@ export default function AgentGraph({ graphState }: Props) {
 	});
 
 	useEffect(() => {
-	if (!researchItems || researchItems.length === 0) {
+		if (!researchItems || researchItems.length === 0) {
+			setVisibleResearchCount(0);
+			return;
+		}
+
+		// Reset when new plan arrives
 		setVisibleResearchCount(0);
-		return;
-	}
 
-	// Reset when new plan arrives
-	setVisibleResearchCount(0);
+		let index = 0;
 
-	let index = 0;
+		const interval = setInterval(() => {
+			index++;
 
-	const interval = setInterval(() => {
-		index++;
+			setVisibleResearchCount((prev) => {
+				if (prev >= researchItems.length) {
+					clearInterval(interval);
+					return prev;
+				}
+				return prev + 1;
+			});
+		}, 350); // 🔥 speed control (adjust later)
 
-		setVisibleResearchCount((prev) => {
-			if (prev >= researchItems.length) {
-				clearInterval(interval);
-				return prev;
-			}
-			return prev + 1;
-		});
-	}, 350); // 🔥 speed control (adjust later)
-
-	return () => clearInterval(interval);
-}, [researchItems]);
+		return () => clearInterval(interval);
+	}, [researchItems]);
 
 	// Apply layout
 	const layouted = useMemo(() => getLayoutedElements(nodes, edges), [nodes, edges]);
@@ -211,6 +215,71 @@ export default function AgentGraph({ graphState }: Props) {
 		}
 	}, [rfInstance, styledNodes, layouted.edges]);
 
+	useEffect(() => {
+		if (!activeNodes && !activeNode) return;
+
+		const now = Date.now();
+
+		const newThoughts: { id: string; text: string; timestamp: number }[] = [];
+
+		// Active nodes
+		if (activeNodes) {
+			activeNodes.forEach((nodeId: string) => {
+				newThoughts.push({
+					id: `${nodeId}-${now}-${thoughtIdCounter.current++}`,
+					text: `🧠 ${nodeId} is thinking...`,
+					timestamp: now,
+				});
+			});
+		}
+
+		// Single active node fallback
+		if (activeNode) {
+			newThoughts.push({
+				id: `${activeNode}-${now}`,
+				text: `⚡ ${activeNode} started`,
+				timestamp: now,
+			});
+		}
+
+		if (newThoughts.length > 0) {
+			setThoughts((prev) => {
+				// prevent spam duplicates
+				const combined = [...prev, ...newThoughts];
+
+				// keep last 50 only
+				return combined.slice(-50);
+			});
+		}
+	}, [activeNodes, activeNode]);
+
+	useEffect(() => {
+		if (!completedNodes && !failedNodes) return;
+
+		const now = Date.now();
+		const updates: any[] = [];
+
+		completedNodes?.forEach((id: string) => {
+			updates.push({
+				id: `${id}-done-${now}-${thoughtIdCounter.current++}`,
+				text: `✅ ${id} completed`,
+				timestamp: now,
+			});
+		});
+
+		failedNodes?.forEach((id: string) => {
+			updates.push({
+				id: `${id}-fail-${now}-${thoughtIdCounter.current++}`,
+				text: `❌ ${id} failed`,
+				timestamp: now,
+			});
+		});
+
+		if (updates.length > 0) {
+			setThoughts((prev) => [...prev, ...updates].slice(-50));
+		}
+	}, [completedNodes, failedNodes]);
+
 	return (
 		<div style={{ display: "flex", height: 600, gap: 16 }}>
 			<div style={{ flex: 1, minWidth: 0 }}>
@@ -226,34 +295,93 @@ export default function AgentGraph({ graphState }: Props) {
 
 			<div
 				style={{
-					width: 260,
-					padding: 12,
+					width: 320,
+					display: "flex",
+					flexDirection: "column",
 					borderLeft: "1px solid #ddd",
-					overflowY: "auto",
-					background: "#fafafa",
-					color: "#333"
+					background: "#0f172a",
+					color: "#e2e8f0",
+					overflowY: "scroll",
 				}}
 			>
-				<h3 style={{ marginTop: 0 }}>Researchers</h3>
-				{researchItems.length === 0 ? (
-					<p>No researchers yet</p>
-				) : (
-					<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
-						{researchItems.slice(0, visibleResearchCount).map((topic: string, index: number) => {
-							const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
-							return (
-								<li key={index} style={{ marginBottom: 12, padding: 8, borderRadius: 8, background: "#fff", border: "1px solid #ddd" }}>
-									<div style={{ fontWeight: 700, marginBottom: 4 }}>Researcher {index + 1}</div>
-									<div style={{ marginBottom: 4, fontSize: 12, color: "#555" }}>{topic}</div>
-									<div style={{ height: 8, borderRadius: 999, background: "rgba(0, 0, 0, 0.1)" }}>
-										<div style={{ width: `${progress}%`, height: "100%", borderRadius: 999, background: "#1976d2" }} />
-									</div>
-									<div style={{ marginTop: 2, fontSize: 11, color: "#444" }}>{progress}%</div>
-								</li>
-							);
-						})}
-					</ul>
-				)}
+				{/* Researchers */}
+				<div style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>
+					<h3 style={{ marginTop: 0 }}>Researchers</h3>
+
+					{researchItems.length === 0 ? (
+						<p>No researchers yet</p>
+					) : (
+						<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
+							{researchItems.slice(0, visibleResearchCount).map((topic: string, index: number) => {
+								const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
+
+								return (
+									<li
+										key={index}
+										style={{
+											marginBottom: 10,
+											padding: 8,
+											borderRadius: 8,
+											background: "#111827",
+											border: "1px solid #1f2937",
+										}}
+									>
+										<div style={{ fontWeight: 700, fontSize: 13 }}>
+											Researcher {index + 1}
+										</div>
+										<div style={{ fontSize: 11, opacity: 0.7 }}>{topic}</div>
+
+										<div
+											style={{
+												height: 6,
+												borderRadius: 999,
+												background: "#1f2937",
+												marginTop: 6,
+											}}
+										>
+											<div
+												style={{
+													width: `${progress}%`,
+													height: "100%",
+													borderRadius: 999,
+													background: "#3b82f6",
+												}}
+											/>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+
+				{/* 🧠 Thought Stream */}
+				<div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+					<h3 style={{ marginTop: 0 }}>Agent Thoughts</h3>
+
+					{thoughts.length === 0 ? (
+						<p style={{ fontSize: 12, opacity: 0.6 }}>
+							Waiting for agents...
+						</p>
+					) : (
+						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+							{thoughts.map((t) => (
+								<div
+									key={t.id}
+									style={{
+										fontSize: 12,
+										padding: "6px 8px",
+										borderRadius: 6,
+										background: "#020617",
+										border: "1px solid #1e293b",
+									}}
+								>
+									{t.text}
+								</div>
+							))}
+						</div>
+					)}
+				</div>
 			</div>
 		</div>
 	);
