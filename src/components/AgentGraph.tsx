@@ -51,6 +51,8 @@ export default function AgentGraph({ graphState }: Props) {
 	const [rfInstance, setRfInstance] = useState<any>(null);
 	const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
 	const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
+	const [visibleResearchCount, setVisibleResearchCount] = useState(0);
+	
 
 	const isResearchNode = (id: string) => id.startsWith("research_");
 
@@ -97,7 +99,9 @@ export default function AgentGraph({ graphState }: Props) {
 	// Dynamic researcher nodes
 	const researchItems = graphState?.plannerOutput?.researchers || [];
 
-	const dynamicResearchNodes: Node[] = researchItems.map((topic: string, index: number) => {
+	const dynamicResearchNodes: Node[] = researchItems
+	.slice(0, visibleResearchCount)
+	.map((topic: string, index: number) => {
 		const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
 		return {
 			id: `research_${index}`,
@@ -117,7 +121,7 @@ export default function AgentGraph({ graphState }: Props) {
 		{ id: "e2", source: "writer", target: "critic" },
 	];
 
-	researchItems.forEach((_: any, index: number) => {
+	researchItems.slice(0, visibleResearchCount).forEach((_: any, index: number) => {
 		edges.push({
 			id: `er_${index}`,
 			source: "planner",
@@ -130,6 +134,32 @@ export default function AgentGraph({ graphState }: Props) {
 			target: "synthesizer",
 		});
 	});
+
+	useEffect(() => {
+	if (!researchItems || researchItems.length === 0) {
+		setVisibleResearchCount(0);
+		return;
+	}
+
+	// Reset when new plan arrives
+	setVisibleResearchCount(0);
+
+	let index = 0;
+
+	const interval = setInterval(() => {
+		index++;
+
+		setVisibleResearchCount((prev) => {
+			if (prev >= researchItems.length) {
+				clearInterval(interval);
+				return prev;
+			}
+			return prev + 1;
+		});
+	}, 350); // 🔥 speed control (adjust later)
+
+	return () => clearInterval(interval);
+}, [researchItems]);
 
 	// Apply layout
 	const layouted = useMemo(() => getLayoutedElements(nodes, edges), [nodes, edges]);
@@ -209,7 +239,7 @@ export default function AgentGraph({ graphState }: Props) {
 					<p>No researchers yet</p>
 				) : (
 					<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
-						{researchItems.map((topic: string, index: number) => {
+						{researchItems.slice(0, visibleResearchCount).map((topic: string, index: number) => {
 							const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
 							return (
 								<li key={index} style={{ marginBottom: 12, padding: 8, borderRadius: 8, background: "#fff", border: "1px solid #ddd" }}>
