@@ -154,21 +154,32 @@ export default function AgentGraph({ graphState }: Props) {
 	useEffect(() => {
 		if (!rfInstance) return;
 
+		let nodesChanged = false;
+		let edgesChanged = false;
+
 		if (!isEqual(rfNodes, styledNodes)) {
 			setRfNodes(styledNodes);
+			nodesChanged = true;
 		}
 
 		if (!isEqual(rfEdges, layouted.edges)) {
 			setRfEdges(layouted.edges);
+			edgesChanged = true;
 		}
 
-		setTimeout(() => {
-			rfInstance.fitView({
-				padding: 0.2,
-				duration: 500,
+		// 🔥 Only fit when something actually changed
+		if (nodesChanged || edgesChanged) {
+			// Delay ensures DOM + dagre layout is fully applied
+			requestAnimationFrame(() => {
+				setTimeout(() => {
+					rfInstance.fitView({
+						padding: 0.25,
+						duration: 600,
+					});
+				}, 120); // 🔥 critical fix (was 0)
 			});
-		}, 0);
-	}, [rfInstance, rfNodes, rfEdges, styledNodes, layouted.edges]);
+		}
+	}, [rfInstance, styledNodes, layouted.edges]);
 
 	return (
 		<div style={{ display: "flex", height: 600, gap: 16 }}>
