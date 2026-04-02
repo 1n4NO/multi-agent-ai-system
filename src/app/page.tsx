@@ -109,43 +109,33 @@ if (step === "NODE_PROGRESS") {
 	const finalResult = logs.find((log) => log.step === "complete")?.data;
 
 	return (
-		<Container maxWidth="md" style={{ marginTop: 40, paddingTop: 40 }}>
-			<Typography
-				variant="h4"
-				style={{ position: "absolute", top: 20, left: 40, zIndex: 1 }}
-			>
-				Multi-Agent AI System
-			</Typography>
+	<Container maxWidth={false} sx={{ mt: 4 }}>
+		<Typography variant="h4" sx={{ mb: 2 }}>
+			Multi-Agent AI System
+		</Typography>
 
-			<Paper style={{ padding: 20, marginBottom: 20 }}>
+		<Paper sx={{ p: 2, mb: 2 }}>
+			<Stack direction="row" spacing={2}>
 				<TextField
 					fullWidth
 					label="Enter your goal"
 					value={goal}
 					onChange={(e) => setGoal(e.target.value)}
 				/>
+				<Button variant="contained" onClick={runAgents}>
+					Run Agents
+				</Button>
+			</Stack>
+		</Paper>
 
-				<Box mt={2}>
-					<Button variant="contained" onClick={runAgents}>
-						Run Agents
-					</Button>
-				</Box>
-			</Paper>
-
-			{/* 🔥 Graph */}
+		{/* 🔥 MAIN GRAPH AREA */}
+		<Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
 			<ReactFlowProvider>
 				<AgentGraph graphState={state} />
 			</ReactFlowProvider>
 
-			{/* Logs Panel */}
-			<Paper
-				style={{
-					padding: 20,
-					marginTop: 20,
-					maxHeight: 300,
-					overflow: "auto",
-				}}
-			>
+			{/* Logs */}
+			<Paper sx={{ p: 2, maxHeight: 300, overflow: "auto" }}>
 				{logs.map((log, i) => (
 					<div key={i} style={{ marginBottom: 20 }}>
 						{log.data && typeof log.data === "string" ? (
@@ -157,8 +147,9 @@ if (step === "NODE_PROGRESS") {
 				))}
 			</Paper>
 
+			{/* Actions */}
 			{finalResult && (
-				<Stack direction="row" spacing={2} mt={2} justifyContent={"flex-end"}>
+				<Stack direction="row" spacing={2} justifyContent="flex-end">
 					<Button
 						variant="outlined"
 						onClick={() => copyToClipboard(finalResult.final)}
@@ -176,6 +167,7 @@ if (step === "NODE_PROGRESS") {
 					</Button>
 				</Stack>
 			)}
-		</Container>
-	);
+		</Box>
+	</Container>
+);
 }

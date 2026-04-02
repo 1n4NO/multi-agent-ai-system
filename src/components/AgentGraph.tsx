@@ -281,108 +281,128 @@ export default function AgentGraph({ graphState }: Props) {
 	}, [completedNodes, failedNodes]);
 
 	return (
-		<div style={{ display: "flex", height: 600, gap: 16 }}>
-			<div style={{ flex: 1, minWidth: 0 }}>
-				<ReactFlow
-					nodes={rfNodes}
-					edges={rfEdges}
-					onInit={setRfInstance}
-				>
-					<Background />
-					<Controls />
-				</ReactFlow>
-			</div>
+	<div style={{ display: "flex", flex: 1, minHeight: 500 }}>
+		{/* 🔥 GRAPH PANEL */}
+		<div style={{ flex: 2, minWidth: 0 }}>
+			<ReactFlow
+				nodes={rfNodes}
+				edges={rfEdges}
+				onInit={setRfInstance}
+			>
+				<Background />
+				<Controls />
+			</ReactFlow>
+		</div>
 
+		{/* 🔥 RIGHT SIDE PANELS */}
+		<div
+			style={{
+				display: "flex",
+				width: 500,
+				borderLeft: "1px solid #ddd",
+				color: "#333",
+				fontFamily: "sans-serif",
+			}}
+		>
+			{/* 🧪 Researchers Panel */}
 			<div
 				style={{
-					width: 320,
-					display: "flex",
-					flexDirection: "column",
-					borderLeft: "1px solid #ddd",
-					background: "#0f172a",
-					color: "#e2e8f0",
-					overflowY: "scroll",
+					flex: 1,
+					padding: 12,
+					overflowY: "auto",
+					background: "#fafafa",
+					borderRight: "1px solid #ddd",
 				}}
 			>
-				{/* Researchers */}
-				<div style={{ padding: 12, borderBottom: "1px solid #1e293b" }}>
-					<h3 style={{ marginTop: 0 }}>Researchers</h3>
+				<h3 style={{ marginTop: 0 }}>Researchers</h3>
 
-					{researchItems.length === 0 ? (
-						<p>No researchers yet</p>
-					) : (
-						<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
-							{researchItems.slice(0, visibleResearchCount).map((topic: string, index: number) => {
-								const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
+				{researchItems.length === 0 ? (
+					<p>No researchers yet</p>
+				) : (
+					<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
+						{researchItems
+							.slice(0, visibleResearchCount)
+							.map((topic: string, index: number) => {
+								const progress =
+									graphState?.researcherProgress?.[`research_${index}`] ?? 0;
 
 								return (
 									<li
 										key={index}
 										style={{
-											marginBottom: 10,
+											marginBottom: 12,
 											padding: 8,
 											borderRadius: 8,
-											background: "#111827",
-											border: "1px solid #1f2937",
+											background: "#fff",
+											border: "1px solid #ddd",
 										}}
 									>
-										<div style={{ fontWeight: 700, fontSize: 13 }}>
+										<div style={{ fontWeight: 700 }}>
 											Researcher {index + 1}
 										</div>
-										<div style={{ fontSize: 11, opacity: 0.7 }}>{topic}</div>
+										<div style={{ fontSize: 12, color: "#555" }}>
+											{topic}
+										</div>
 
 										<div
 											style={{
 												height: 6,
-												borderRadius: 999,
-												background: "#1f2937",
+												background: "#eee",
 												marginTop: 6,
+												borderRadius: 999,
 											}}
 										>
 											<div
 												style={{
 													width: `${progress}%`,
 													height: "100%",
+													background: "#1976d2",
 													borderRadius: 999,
-													background: "#3b82f6",
 												}}
 											/>
 										</div>
 									</li>
 								);
 							})}
-						</ul>
-					)}
-				</div>
+					</ul>
+				)}
+			</div>
 
-				{/* 🧠 Thought Stream */}
-				<div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-					<h3 style={{ marginTop: 0 }}>Agent Thoughts</h3>
+			{/* 🧠 Thoughts Panel */}
+			<div
+				style={{
+					flex: 1,
+					padding: 12,
+					overflowY: "auto",
+					background: "#f5f5f5",
+				}}
+			>
+				<h3 style={{ marginTop: 0 }}>Agent Thoughts</h3>
 
-					{thoughts.length === 0 ? (
-						<p style={{ fontSize: 12, opacity: 0.6 }}>
-							Waiting for agents...
-						</p>
-					) : (
-						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-							{thoughts.map((t) => (
-								<div
-									key={t.id}
-									style={{
-										fontSize: 12,
-										padding: "6px 8px",
-										borderRadius: 6,
-										background: "#020617",
-										border: "1px solid #1e293b",
-									}}
-								>
-									{t.text}
-								</div>
-							))}
-						</div>
-					)}
-				</div>
+				{thoughts.length === 0 ? (
+					<p style={{ fontSize: 12, color: "#666" }}>
+						Waiting for agents...
+					</p>
+				) : (
+					<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+						{thoughts.map((t) => (
+							<div
+								key={t.id}
+								style={{
+									fontSize: 12,
+									padding: "6px 8px",
+									borderRadius: 6,
+									background: "#fff",
+									border: "1px solid #ddd",
+								}}
+							>
+								{t.text}
+							</div>
+						))}
+					</div>
+				)}
 			</div>
 		</div>
-	);
+	</div>
+);
 }
