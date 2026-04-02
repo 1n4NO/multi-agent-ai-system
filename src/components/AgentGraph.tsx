@@ -53,8 +53,8 @@ export default function AgentGraph({ graphState }: Props) {
 	const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
 	const [visibleResearchCount, setVisibleResearchCount] = useState(0);
 	const [thoughts, setThoughts] = useState<
-		{ id: string; text: string; timestamp: number }[]
-	>([]);
+		Record<string, { text: string; timestamp: number }>
+		>({});
 	const thoughtIdCounter = useRef(0);
 
 
@@ -216,69 +216,56 @@ export default function AgentGraph({ graphState }: Props) {
 	}, [rfInstance, styledNodes, layouted.edges]);
 
 	useEffect(() => {
-		if (!activeNodes && !activeNode) return;
+	if (!activeNodes && !activeNode) return;
 
-		const now = Date.now();
+	const now = Date.now();
 
-		const newThoughts: { id: string; text: string; timestamp: number }[] = [];
+	setThoughts((prev) => {
+		const updated = { ...prev };
 
-		// Active nodes
-		if (activeNodes) {
-			activeNodes.forEach((nodeId: string) => {
-				newThoughts.push({
-					id: `${nodeId}-${now}-${thoughtIdCounter.current++}`,
-					text: `🧠 ${nodeId} is thinking...`,
-					timestamp: now,
-				});
-			});
-		}
+		activeNodes?.forEach((nodeId: string) => {
+			updated[nodeId] = {
+				text: `🧠 ${nodeId} is thinking...`,
+				timestamp: now,
+			};
+		});
 
-		// Single active node fallback
 		if (activeNode) {
-			newThoughts.push({
-				id: `${activeNode}-${now}`,
+			updated[activeNode] = {
 				text: `⚡ ${activeNode} started`,
 				timestamp: now,
-			});
+			};
 		}
 
-		if (newThoughts.length > 0) {
-			setThoughts((prev) => {
-				// prevent spam duplicates
-				const combined = [...prev, ...newThoughts];
-
-				// keep last 50 only
-				return combined.slice(-50);
-			});
-		}
-	}, [activeNodes, activeNode]);
+		return updated;
+	});
+}, [activeNodes, activeNode]);
 
 	useEffect(() => {
-		if (!completedNodes && !failedNodes) return;
+	if (!completedNodes && !failedNodes) return;
 
-		const now = Date.now();
-		const updates: any[] = [];
+	const now = Date.now();
+
+	setThoughts((prev) => {
+		const updated = { ...prev };
 
 		completedNodes?.forEach((id: string) => {
-			updates.push({
-				id: `${id}-done-${now}-${thoughtIdCounter.current++}`,
+			updated[id] = {
 				text: `✅ ${id} completed`,
 				timestamp: now,
-			});
+			};
 		});
 
 		failedNodes?.forEach((id: string) => {
-			updates.push({
-				id: `${id}-fail-${now}-${thoughtIdCounter.current++}`,
+			updated[id] = {
 				text: `❌ ${id} failed`,
 				timestamp: now,
-			});
+			};
 		});
 
-		if (updates.length > 0) {
-			setThoughts((prev) => [...prev, ...updates].slice(-50));
-		}
-	}, [completedNodes, failedNodes]);
+		return updated;
+	});
+}, [completedNodes, failedNodes]);
 
 	return (
 	<div style={{ display: "flex", flex: 1, minHeight: 500 }}>
@@ -312,6 +299,7 @@ export default function AgentGraph({ graphState }: Props) {
 					overflowY: "auto",
 					background: "#fafafa",
 					borderRight: "1px solid #ddd",
+					maxHeight: "calc(100vh - 200px)",
 				}}
 			>
 				<h3 style={{ marginTop: 0 }}>Researchers</h3>
@@ -375,19 +363,22 @@ export default function AgentGraph({ graphState }: Props) {
 					padding: 12,
 					overflowY: "auto",
 					background: "#f5f5f5",
+					maxHeight: "calc(100vh - 200px)",
 				}}
 			>
 				<h3 style={{ marginTop: 0 }}>Agent Thoughts</h3>
 
-				{thoughts.length === 0 ? (
+				{Object.keys(thoughts).length === 0 ? (
 					<p style={{ fontSize: 12, color: "#666" }}>
 						Waiting for agents...
 					</p>
 				) : (
 					<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-						{thoughts.map((t) => (
+						{Object.entries(thoughts)
+							.sort((a, b) => b[1].timestamp - a[1].timestamp)
+							.map(([key, t]) => (
 							<div
-								key={t.id}
+								key={key}
 								style={{
 									fontSize: 12,
 									padding: "6px 8px",
