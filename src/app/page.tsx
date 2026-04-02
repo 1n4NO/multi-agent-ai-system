@@ -48,7 +48,18 @@ export default function Home() {
 					const step = parsed.step;
 
 					// 🔥 Node lifecycle updates
-					if (step?.includes("_start")) {
+if (step === "NODE_PROGRESS") {
+								if (parsed.nodeId) {
+									dispatch({
+										type: "NODE_PROGRESS",
+										nodeId: parsed.nodeId,
+										progress: parsed.progress ?? 0,
+									});
+								}
+								return;
+							}
+
+							if (step?.includes("_start")) {
 						const nodeId = step.replace("_start", "");
 						dispatch({
 							type: "NODE_START",

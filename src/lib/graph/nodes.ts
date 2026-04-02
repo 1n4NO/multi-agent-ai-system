@@ -22,13 +22,29 @@ export function createGraph(goal: string) {
 
       researchers: {
         id: "researchers",
-        run: async () => {
-          return await Promise.all(
-            tasks.map(async (task) => {
-              const webData = await webSearch(task);
-              return await researcherAgent(task + "\n" + webData);
-            })
-          );
+        run: async (_state: any, onStep?: (data: any) => void) => {
+          const researchPromises = tasks.map(async (task, index) => {
+            const nodeId = `research_${index}`;
+            onStep?.({ step: `${nodeId}_start`, attempt: 1 });
+
+            // simulate minor incremental progress for UX (25/60/90) while running
+            onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 10 });
+
+            const webData = await webSearch(task);
+            onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 40 });
+
+            const result = await researcherAgent(task + "\n" + webData);
+            onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 80 });
+
+            // final load for this researcher node
+            onStep?.({ step: `${nodeId}_done`, data: result });
+            onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 100 });
+
+            return result;
+          });
+
+          const results = await Promise.all(researchPromises);
+          return results;
         },
       },
 

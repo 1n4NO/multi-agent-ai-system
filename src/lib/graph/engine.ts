@@ -19,7 +19,7 @@ export async function executeGraph(
       attempt: state.meta.attempts[nodeId],
     });
 
-    const output = await node.run(state);
+    const output = await node.run(state, onStep);
 
     state.data[nodeId] = output;
 

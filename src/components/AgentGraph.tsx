@@ -47,7 +47,7 @@ function getLayoutedElements(nodes: Node[], edges: Edge[]) {
 }
 
 export default function AgentGraph({ graphState }: Props) {
-	const { activeNode, completedNodes, failedNodes } = graphState;
+	const { activeNode, activeNodes, completedNodes, failedNodes, researcherProgress } = graphState;
 	const [rfInstance, setRfInstance] = useState<any>(null);
 	const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
 	const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
@@ -55,26 +55,35 @@ export default function AgentGraph({ graphState }: Props) {
 	const isResearchNode = (id: string) => id.startsWith("research_");
 
 	const getNodeStatus = (id: string) => {
-		if (failedNodes.has(id) || (failedNodes.has("researchers") && isResearchNode(id))) return "failed";
-		if (completedNodes.has(id) || (completedNodes.has("researchers") && isResearchNode(id))) return "completed";
-
+		if (failedNodes?.has(id)) return "failed";
+		if (completedNodes?.has(id)) return "completed";
+		if (activeNodes?.has(id)) return "active";
 		if (activeNode === id) return "active";
-		if (activeNode === "researchers" && isResearchNode(id)) return "active";
-
 		return "idle";
 	};
 
-	const getNodeStyle = (status: string) => {
-		switch (status) {
-			case "active":
-				return { background: "#2196f3", color: "white" };
-			case "completed":
-				return { background: "#4caf50", color: "white" };
-			case "failed":
-				return { background: "#f44336", color: "white" };
-			default:
-				return { background: "#eee" };
+	const getNodeStyle = (status: string, progress?: number) => {
+		const baseStyle = (() => {
+			switch (status) {
+				case "active":
+					return { background: "#2196f3", color: "white" };
+				case "completed":
+					return { background: "#4caf50", color: "white" };
+				case "failed":
+					return { background: "#f44336", color: "white" };
+				default:
+					return { background: "#eee", color: "black" };
+			}
+		})();
+
+		if (typeof progress === "number" && progress >= 0 && progress < 100) {
+			return {
+				...baseStyle,
+				background: `linear-gradient(to right, rgba(25,118,210,0.5) ${progress}%, ${baseStyle.background} ${progress}%)`,
+			};
 		}
+
+		return baseStyle;
 	};
 
 	// Static nodes
@@ -88,16 +97,18 @@ export default function AgentGraph({ graphState }: Props) {
 	// Dynamic researcher nodes
 	const researchItems = graphState?.plannerOutput?.researchers || [];
 
-	const dynamicResearchNodes: Node[] = researchItems.map(
-		(topic: string, index: number) => ({
+	const dynamicResearchNodes: Node[] = researchItems.map((topic: string, index: number) => {
+		const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
+		return {
 			id: `research_${index}`,
 			data: {
 				label: `Researcher ${index + 1}`,
 				topic,
+				progress,
 			},
 			position: { x: 0, y: 0 },
-		})
-	);
+		};
+	});
 
 	const nodes = [...baseNodes, ...dynamicResearchNodes];
 
@@ -121,28 +132,35 @@ export default function AgentGraph({ graphState }: Props) {
 	});
 
 	// Apply layout
-	const layouted = useMemo(() => {
-		return getLayoutedElements(nodes, edges);
-	}, [graphState.plannerOutput]);
+	const layouted = useMemo(() => getLayoutedElements(nodes, edges), [nodes, edges]);
 
 	// Apply styles
 	const styledNodes = useMemo(() => {
-  return layouted.nodes.map((node) => {
-    const status = getNodeStatus(node.id);
+		return layouted.nodes.map((node) => {
+			const status = getNodeStatus(node.id);
+			const progress = node.data?.progress ?? (isResearchNode(node.id) ? (researcherProgress?.[node.id] ?? 0) : undefined);
 
-    return {
-      ...node,
-      style: {
-        ...getNodeStyle(status),
-        borderRadius: 10,
-        padding: 10,
-      },
-    };
-  });
-}, [layouted.nodes, activeNode, completedNodes, failedNodes]);
+			return {
+				...node,
+				style: {
+					...getNodeStyle(status, progress),
+					borderRadius: 10,
+					padding: 10,
+				},
+			};
+		});
+	}, [layouted.nodes, activeNode, activeNodes, completedNodes, failedNodes, researcherProgress]);
 
 	useEffect(() => {
 		if (!rfInstance) return;
+
+		if (!isEqual(rfNodes, styledNodes)) {
+			setRfNodes(styledNodes);
+		}
+
+		if (!isEqual(rfEdges, layouted.edges)) {
+			setRfEdges(layouted.edges);
+		}
 
 		setTimeout(() => {
 			rfInstance.fitView({
@@ -150,19 +168,7 @@ export default function AgentGraph({ graphState }: Props) {
 				duration: 500,
 			});
 		}, 0);
-	}, [rfInstance, rfNodes]);
-
-	useEffect(() => {
-		setRfNodes((prev) => {
-			if (isEqual(prev, styledNodes)) return prev;
-			return styledNodes;
-		});
-
-		setRfEdges((prev) => {
-			if (isEqual(prev, layouted.edges)) return prev;
-			return layouted.edges;
-		});
-	}, [styledNodes, layouted.edges]);
+	}, [rfInstance, rfNodes, rfEdges, styledNodes, layouted.edges]);
 
 	return (
 		<div style={{ display: "flex", height: 600, gap: 16 }}>
@@ -170,8 +176,6 @@ export default function AgentGraph({ graphState }: Props) {
 				<ReactFlow
 					nodes={rfNodes}
 					edges={rfEdges}
-					onNodesChange={onNodesChange}
-					onEdgesChange={onEdgesChange}
 					onInit={setRfInstance}
 				>
 					<Background />
@@ -193,12 +197,20 @@ export default function AgentGraph({ graphState }: Props) {
 				{researchItems.length === 0 ? (
 					<p>No researchers yet</p>
 				) : (
-					<ul style={{ paddingLeft: 18, margin: 0 }}>
-						{researchItems.map((topic: string, index: number) => (
-							<li key={index} style={{ marginBottom: 8 }}>
-								<strong>Researcher {index + 1}:</strong> {topic}
-							</li>
-						))}
+					<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
+						{researchItems.map((topic: string, index: number) => {
+							const progress = graphState?.researcherProgress?.[`research_${index}`] ?? 0;
+							return (
+								<li key={index} style={{ marginBottom: 12, padding: 8, borderRadius: 8, background: "#fff", border: "1px solid #ddd" }}>
+									<div style={{ fontWeight: 700, marginBottom: 4 }}>Researcher {index + 1}</div>
+									<div style={{ marginBottom: 4, fontSize: 12, color: "#555" }}>{topic}</div>
+									<div style={{ height: 8, borderRadius: 999, background: "rgba(0, 0, 0, 0.1)" }}>
+										<div style={{ width: `${progress}%`, height: "100%", borderRadius: 999, background: "#1976d2" }} />
+									</div>
+									<div style={{ marginTop: 2, fontSize: 11, color: "#444" }}>{progress}%</div>
+								</li>
+							);
+						})}
 					</ul>
 				)}
 			</div>

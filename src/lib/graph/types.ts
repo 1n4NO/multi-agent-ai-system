@@ -2,7 +2,7 @@ export type NodeId = string;
 
 export type GraphNode = {
 	id: NodeId;
-	run: (state: GraphState) => Promise<any>;
+	run: (state: GraphState, onStep?: (data: any) => void) => Promise<any>;
 };
 
 export type Edge = {

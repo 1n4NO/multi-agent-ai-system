@@ -4,9 +4,11 @@ import { useReducer } from "react";
 
 type State = {
   activeNode: string | null;
+  activeNodes: Set<string>;
   completedNodes: Set<string>;
   failedNodes: Set<string>;
   attempts: Record<string, number>;
+  researcherProgress: Record<string, number>;
   lastEvent: any;
 
   // ✅ stores planner output (researchers list)
@@ -15,6 +17,7 @@ type State = {
 
 type Action =
   | { type: "NODE_START"; nodeId: string; attempt?: number }
+  | { type: "NODE_PROGRESS"; nodeId: string; progress: number }
   | { type: "NODE_DONE"; nodeId: string }
   | { type: "NODE_FAIL"; nodeId: string }
   | { type: "PLANNER_DONE"; data: any }
@@ -22,9 +25,11 @@ type Action =
 
 const initialState: State = {
   activeNode: null,
+  activeNodes: new Set<string>(),
   completedNodes: new Set<string>(),
   failedNodes: new Set<string>(),
   attempts: {},
+  researcherProgress: {},
   lastEvent: null,
   plannerOutput: null,
 };
@@ -32,12 +37,31 @@ const initialState: State = {
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "NODE_START": {
+      const activeNodes = new Set(state.activeNodes);
+      activeNodes.add(action.nodeId);
+
       return {
         ...state,
         activeNode: action.nodeId,
+        activeNodes,
         attempts: {
           ...state.attempts,
           [action.nodeId]: action.attempt ?? 1,
+        },
+        researcherProgress: {
+          ...state.researcherProgress,
+          [action.nodeId]: action.nodeId.startsWith("research_") ? 0 : state.researcherProgress[action.nodeId] || 0,
+        },
+        lastEvent: action,
+      };
+    }
+
+    case "NODE_PROGRESS": {
+      return {
+        ...state,
+        researcherProgress: {
+          ...state.researcherProgress,
+          [action.nodeId]: action.progress,
         },
         lastEvent: action,
       };
@@ -47,10 +71,18 @@ function reducer(state: State, action: Action): State {
       const completed = new Set(state.completedNodes);
       completed.add(action.nodeId);
 
+      const activeNodes = new Set(state.activeNodes);
+      activeNodes.delete(action.nodeId);
+
       return {
         ...state,
-        activeNode: null,
+        activeNode: activeNodes.size > 0 ? Array.from(activeNodes)[0] : null,
+        activeNodes,
         completedNodes: completed,
+        researcherProgress: {
+          ...state.researcherProgress,
+          [action.nodeId]: 100,
+        },
         lastEvent: action,
       };
     }
@@ -59,9 +91,13 @@ function reducer(state: State, action: Action): State {
       const failed = new Set(state.failedNodes);
       failed.add(action.nodeId);
 
+      const activeNodes = new Set(state.activeNodes);
+      activeNodes.delete(action.nodeId);
+
       return {
         ...state,
-        activeNode: null,
+        activeNode: activeNodes.size > 0 ? Array.from(activeNodes)[0] : null,
+        activeNodes,
         failedNodes: failed,
         lastEvent: action,
       };
