@@ -1,18 +1,11 @@
 "use client";
 
 import { useReducer } from "react";
-
-type PlannerResearcher = {
-	topic: string;
-};
-
-type PlannerDonePayload = {
-	researchers: PlannerResearcher[];
-};
+import type { ResearchPlanPayload } from "@/lib/researchPlan";
 
 type PlannerOutput = {
-	raw: PlannerDonePayload;
-	researchers: string[];
+	raw: ResearchPlanPayload;
+	researchers: ResearchPlanPayload["researchers"];
 };
 
 type LastEvent =
@@ -49,7 +42,7 @@ type Action =
 	| { type: "NODE_DONE"; nodeId: string }
 	| { type: "NODE_FAIL"; nodeId: string }
 	| { type: "NODE_STREAM"; nodeId: string; content: string }
-	| { type: "PLANNER_DONE"; data: PlannerDonePayload }
+	| { type: "PLANNER_DONE"; data: ResearchPlanPayload }
 	| { type: "RESET" };
 
 const initialState: State = {
@@ -157,7 +150,7 @@ function reducer(state: State, action: Action): State {
 				...state,
 				plannerOutput: {
 					raw: action.data,
-					researchers: action.data.researchers.map((item) => item.topic),
+					researchers: action.data.researchers,
 				},
 				lastEvent: action,
 			};

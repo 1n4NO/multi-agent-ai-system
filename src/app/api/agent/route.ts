@@ -1,10 +1,15 @@
 import { NextRequest } from "next/server";
 import { runAgents } from "@/lib/orchestrator/runAgents";
+import {
+	createRunSession,
+	deleteRunSession,
+} from "@/lib/orchestrator/sessionControl";
 import { isAbortError } from "@/lib/utils/abort";
 
 export async function POST(req: NextRequest) {
-  const { goal } = await req.json();
+  const { goal, autoProceed = false } = await req.json();
   const encoder = new TextEncoder();
+  const session = createRunSession(autoProceed);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -41,7 +46,12 @@ export async function POST(req: NextRequest) {
       req.signal.addEventListener("abort", close, { once: true });
 
       try {
-        const result = await runAgents(goal, send, req.signal);
+        send({
+          step: "session",
+          ...session.getClientState(),
+        });
+
+        const result = await runAgents(goal, send, req.signal, session);
 
         if (!req.signal.aborted) {
           send({ step: "complete", data: result });
@@ -51,6 +61,8 @@ export async function POST(req: NextRequest) {
           send({ step: "error" });
         }
       } finally {
+        session.close();
+        deleteRunSession(session.sessionId);
         close();
       }
     },

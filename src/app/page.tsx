@@ -11,12 +11,16 @@ import {
 	Stack,
 } from "@mui/material";
 import { copyToClipboard, exportToPDF } from "@/lib/utils/export";
-import { parsePlanToTasks } from "@/lib/utils/parsePlan";
 import AgentGraph from "@/components/AgentGraph";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { useGraphState } from "@/hooks/useGraphState";
 import { ReactFlowProvider } from "reactflow";
+import type { SessionClientState } from "@/lib/orchestrator/sessionControl";
 import type { CitationEntry, ResearchSourceGroup, SearchHit } from "@/lib/tools/realWebSearch";
+import {
+	isResearchPlanPayload,
+	type ResearchPlanItem,
+} from "@/lib/researchPlan";
 
 type RunResult = {
 	critic?: string;
@@ -32,8 +36,14 @@ type LogEvent = {
 	content?: string;
 	progress?: number;
 	attempt?: number;
+	sessionId?: string;
+	autoProceed?: boolean;
+	pausedAt?: string | null;
+	waiting?: boolean;
 	[key: string]: unknown;
 };
+
+type ControlResponse = SessionClientState;
 
 function buildAnchorTag(url: string, label: string) {
 	return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
@@ -123,6 +133,41 @@ export default function Home() {
 	const { state, dispatch } = useGraphState();
 	const [isRunning, setIsRunning] = useState(false);
 	const [controller, setController] = useState<AbortController | null>(null);
+	const [controlState, setControlState] = useState<SessionClientState | null>(null);
+
+	const sendControl = async (
+		payload:
+			| { action: "continue"; sessionId: string }
+			| { action: "set_auto"; sessionId: string; autoProceed: boolean }
+			| {
+				action: "set_research_plan";
+				sessionId: string;
+				researchPlan: ResearchPlanItem[];
+			}
+	) => {
+		const res = await fetch("/api/agent/control", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(payload),
+		});
+
+		if (!res.ok) {
+			throw new Error("Failed to update run control state.");
+		}
+
+		const nextState = (await res.json()) as ControlResponse;
+		setControlState(nextState);
+		if (isResearchPlanPayload({ researchers: nextState.researchPlan })) {
+			dispatch({
+				type: "PLANNER_DONE",
+				data: {
+					researchers: nextState.researchPlan,
+				},
+			});
+		}
+	};
 
 	const runAgents = async () => {
 		// 🔴 If already running → CANCEL
@@ -133,6 +178,7 @@ export default function Home() {
 			setIsRunning(false);
 			setLogs([]);
 			dispatch({ type: "RESET" });
+			setControlState(null);
 
 			return;
 		}
@@ -142,11 +188,15 @@ export default function Home() {
 		setController(abortController);
 		setIsRunning(true);
 		setLogs([]);
+		setControlState(null);
 
 		try {
 			const res = await fetch("/api/agent", {
 				method: "POST",
-				body: JSON.stringify({ goal }),
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ goal, autoProceed: false }),
 				signal: abortController.signal, // 🔥 important
 			});
 
@@ -167,6 +217,7 @@ export default function Home() {
 
 				const newLogs: LogEvent[] = [];
 				const actions: Array<Record<string, unknown>> = [];
+				let nextControlState: SessionClientState | null = null;
 
 				events.forEach((eventChunk) => {
 					const dataLines = eventChunk
@@ -183,6 +234,43 @@ export default function Home() {
 					newLogs.push(parsed);
 
 					const step = parsed.step;
+
+					if (
+						(step === "session" || step === "control_state") &&
+						typeof parsed.sessionId === "string" &&
+						typeof parsed.autoProceed === "boolean" &&
+						typeof parsed.waiting === "boolean"
+					) {
+						nextControlState = {
+							sessionId: parsed.sessionId,
+							autoProceed: parsed.autoProceed,
+							pausedAt:
+								typeof parsed.pausedAt === "string" ? parsed.pausedAt : null,
+							waiting: parsed.waiting,
+							researchPlan:
+								Array.isArray(parsed.researchPlan) &&
+								isResearchPlanPayload({ researchers: parsed.researchPlan })
+									? parsed.researchPlan
+									: [],
+						};
+						if (nextControlState.researchPlan.length > 0) {
+							actions.push({
+								type: "PLANNER_DONE",
+								data: {
+									researchers: nextControlState.researchPlan,
+								},
+							});
+						}
+						return;
+					}
+
+					if (step === "research_plan" && isResearchPlanPayload(parsed.data)) {
+						actions.push({
+							type: "PLANNER_DONE",
+							data: parsed.data,
+						});
+						return;
+					}
 
 					// 🔥 STREAM
 					if (step === "stream" && parsed.nodeId && typeof parsed.content === "string") {
@@ -223,24 +311,22 @@ export default function Home() {
 						});
 
 						if (nodeId === "planner") {
-							const tasks =
-								typeof parsed.data === "string"
-									? parsePlanToTasks(parsed.data)
-									: [];
-
-							actions.push({
-								type: "PLANNER_DONE",
-								data: {
-									researchers: tasks.map((t: string) => ({
-										topic: t,
-									})),
-								},
-							});
+							if (isResearchPlanPayload(parsed.data)) {
+								actions.push({
+									type: "PLANNER_DONE",
+									data: parsed.data,
+								});
+							}
 						}
 					}
 
 					if (step === "complete") {
 						setIsRunning(false);
+						setControlState(null);
+					}
+
+					if (step === "error") {
+						setControlState(null);
 					}
 				});
 
@@ -251,6 +337,10 @@ export default function Home() {
 				// ✅ APPLY ONCE
 				if (newLogs.length > 0) {
 					setLogs((prev) => [...prev, ...newLogs]);
+				}
+
+				if (nextControlState) {
+					setControlState(nextControlState);
 				}
 
 				// ✅ DISPATCH IN BATCH (important)
@@ -322,7 +412,42 @@ export default function Home() {
 			{/* 🔥 MAIN GRAPH AREA */}
 			<Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
 				<ReactFlowProvider>
-					<AgentGraph graphState={state} />
+					<AgentGraph
+						graphState={state}
+						controlState={controlState}
+						onContinue={
+							controlState?.sessionId
+								? async () => {
+									await sendControl({
+										action: "continue",
+										sessionId: controlState.sessionId,
+									});
+								}
+								: undefined
+						}
+						onToggleAuto={
+							controlState?.sessionId
+								? async (autoProceed: boolean) => {
+									await sendControl({
+										action: "set_auto",
+										sessionId: controlState.sessionId,
+										autoProceed,
+									});
+								}
+								: undefined
+						}
+						onResearchPlanChange={
+							controlState?.sessionId
+								? async (researchPlan: ResearchPlanItem[]) => {
+									await sendControl({
+										action: "set_research_plan",
+										sessionId: controlState.sessionId,
+										researchPlan,
+									});
+								}
+								: undefined
+						}
+					/>
 				</ReactFlowProvider>
 
 				{/* Logs */}

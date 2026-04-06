@@ -1,4 +1,5 @@
 import { Graph, GraphState, StepCallback } from "./types";
+import { RunSessionControl } from "@/lib/orchestrator/sessionControl";
 import { throwIfAborted } from "@/lib/utils/abort";
 
 const DEFAULT_MAX_NODE_EXECUTIONS = 25;
@@ -8,7 +9,8 @@ export async function executeGraph(
   graph: Graph,
   initialState: GraphState,
   onStep?: StepCallback,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sessionControl?: RunSessionControl
 ) {
   const state = initialState;
   const pendingNodes: string[] = ["planner"];
@@ -39,12 +41,22 @@ export async function executeGraph(
       );
     }
 
+    await sessionControl?.beforeNode(nodeId, onStep, signal);
+    throwIfAborted(signal);
+
     onStep?.({
       step: `${nodeId}_start`,
       attempt: state.meta.attempts[nodeId],
     });
 
-    const output = await node.run(state, onStep, { signal });
+    const output = await node.run(state, onStep, {
+      signal,
+      beforeNode: sessionControl
+        ? (nextNodeId, nextOnStep, nextSignal) =>
+            sessionControl.beforeNode(nextNodeId, nextOnStep, nextSignal)
+        : undefined,
+      sessionControl,
+    });
     throwIfAborted(signal);
 
     state.data[nodeId] = output;

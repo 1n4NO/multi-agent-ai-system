@@ -1,10 +1,15 @@
 import { plannerAgent } from "@/lib/agents/planner";
+import { routeResearchTask } from "@/lib/agents/researchRouter";
 import { researcherAgent } from "@/lib/agents/researcher";
 import { synthesizerAgent } from "@/lib/agents/synthesizer";
 import { writerAgent } from "@/lib/agents/writer";
 import { criticAgent } from "@/lib/agents/critic";
 import { ExecutionContext, Graph, GraphState, StepCallback } from "@/lib/graph/types";
 import { parsePlanToTasks } from "@/lib/utils/parsePlan";
+import {
+	createResearchPlanPayload,
+	type ResearchPlanItem,
+} from "@/lib/researchPlan";
 import {
 	buildCitationCatalog,
 	formatCitationCatalogForAgent,
@@ -37,8 +42,6 @@ async function streamText(
 }
 
 export function createGraph(goal: string): Graph {
-	let tasks: string[] = [];
-
 	return {
 		nodes: {
 			planner: {
@@ -49,16 +52,47 @@ export function createGraph(goal: string): Graph {
 					// 🔥 STREAM OUTPUT
 					await streamText(plan, "planner", onStep, context?.signal);
 
-					tasks = parsePlanToTasks(plan);
-
 					return plan;
+				},
+			},
+
+			research_router: {
+				id: "research_router",
+				run: async (state: GraphState, onStep?: StepCallback, context?: ExecutionContext) => {
+					const plannerOutput =
+						typeof state.data.planner === "string" ? state.data.planner : "";
+					const tasks = parsePlanToTasks(plannerOutput);
+					const routedPlanItems: ResearchPlanItem[] = await Promise.all(
+						tasks.map(async (task) => ({
+							...createResearchPlanPayload([task]).researchers[0],
+							mode: await routeResearchTask(task, context?.signal),
+						}))
+					);
+					const researchPlan = { researchers: routedPlanItems };
+
+					state.data.researchPlan = researchPlan;
+					context?.sessionControl?.setResearchPlan(routedPlanItems);
+					onStep?.({
+						step: "research_plan",
+						data: researchPlan,
+					});
+
+					return researchPlan;
 				},
 			},
 
 			researchers: {
 				id: "researchers",
 				run: async (state: GraphState, onStep?: StepCallback, context?: ExecutionContext) => {
-					const researchPromises = tasks.map(async (task, index) => {
+					const planFromSession = context?.sessionControl?.getResearchPlan() ?? [];
+					const planFromState =
+						state.data.researchPlan &&
+						typeof state.data.researchPlan === "object" &&
+						Array.isArray((state.data.researchPlan as { researchers?: unknown }).researchers)
+							? ((state.data.researchPlan as { researchers: ResearchPlanItem[] }).researchers ?? [])
+							: [];
+					const researchPlan = planFromSession.length > 0 ? planFromSession : planFromState;
+					const researchPromises = researchPlan.map(async (planItem, index) => {
 						const nodeId = `research_${index}`;
 						throwIfAborted(context?.signal);
 						onStep?.({ step: `${nodeId}_start`, attempt: 1 });
@@ -69,32 +103,37 @@ export function createGraph(goal: string): Graph {
 						// simulate minor incremental progress for UX (25/60/90) while running
 						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 10 });
 
-						try {
-							const webResearch = await realWebSearch(task, context?.signal);
-							consultedSources = webResearch.results;
-							groundedResearch = formatWebResearchForAgent(webResearch);
-						} catch (error) {
-							if (isAbortError(error)) {
-								throw error;
+						if (planItem.mode === "web") {
+							try {
+								const webResearch = await realWebSearch(planItem.prompt, context?.signal);
+								consultedSources = webResearch.results;
+								groundedResearch = formatWebResearchForAgent(webResearch);
+							} catch (error) {
+								if (isAbortError(error)) {
+									throw error;
+								}
+								const message =
+									error instanceof Error ? error.message : "Unknown search error";
+								searchErrorMessage = message;
+								groundedResearch = `Web search failed for this task: ${message}`;
 							}
-							const message =
-								error instanceof Error ? error.message : "Unknown search error";
-							searchErrorMessage = message;
-							groundedResearch = `Web search failed for this task: ${message}`;
+						} else {
+							groundedResearch =
+								"This task was routed to LLM-only research. Use internal reasoning and do not assume external facts beyond general knowledge.";
 						}
 						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 55 });
 
 						const result = await researcherAgent(
-							task,
+							planItem.prompt,
 							groundedResearch,
 							context?.signal
 						);
 						const citationBlock = formatCitationBlock(
-							task,
+							planItem.prompt,
 							consultedSources,
 							searchErrorMessage
 						);
-						const finalResearchOutput = `${citationBlock}\n\n${result}`;
+						const finalResearchOutput = `Mode: ${planItem.mode.toUpperCase()}\n\n${citationBlock}\n\n${result}`;
 
 						// 🔥 STREAM EACH RESEARCHER
 						await streamText(finalResearchOutput, nodeId, onStep, context?.signal);
@@ -106,7 +145,7 @@ export function createGraph(goal: string): Graph {
 
 						return {
 							nodeId,
-							task,
+							task: planItem.prompt,
 							output: finalResearchOutput,
 							sources: consultedSources,
 						};
@@ -196,7 +235,8 @@ export function createGraph(goal: string): Graph {
 		},
 
 		edges: [
-			{ from: "planner", to: "researchers" },
+			{ from: "planner", to: "research_router" },
+			{ from: "research_router", to: "researchers" },
 			{ from: "researchers", to: "synthesizer" },
 			{ from: "synthesizer", to: "writer" },
 

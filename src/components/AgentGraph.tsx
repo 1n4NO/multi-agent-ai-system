@@ -14,23 +14,65 @@ import "reactflow/dist/style.css";
 import { useMemo } from "react";
 import dagre from "dagre";
 import isEqual from "lodash/isEqual";
+import {
+	Dialog,
+	DialogActions,
+	DialogContent,
+	DialogTitle,
+	Button,
+	TextField,
+	FormControl,
+	InputLabel,
+	MenuItem,
+	Select,
+	type SelectChangeEvent,
+} from "@mui/material";
 import type { GraphUIState } from "@/hooks/useGraphState";
+import type { SessionClientState } from "@/lib/orchestrator/sessionControl";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import {
+	createResearchPlanId,
+	type ResearchMode,
+	type ResearchPlanItem,
+} from "@/lib/researchPlan";
 
 type Props = {
 	graphState: GraphUIState;
+	controlState: SessionClientState | null;
+	onContinue?: () => Promise<void>;
+	onToggleAuto?: (autoProceed: boolean) => Promise<void>;
+	onResearchPlanChange?: (researchPlan: ResearchPlanItem[]) => Promise<void>;
 };
 
 const nodeWidth = 150;
 const nodeHeight = 50;
 const EMPTY_STREAMING_CONTENT: Record<string, string> = {};
-const EMPTY_RESEARCH_ITEMS: string[] = [];
+const EMPTY_RESEARCH_ITEMS: ResearchPlanItem[] = [];
 const BASE_NODES: Node[] = [
 	{ id: "planner", data: { label: "Planner" }, position: { x: 0, y: 0 } },
+	{ id: "research_router", data: { label: "Research Router" }, position: { x: 0, y: 0 } },
+	{ id: "researchers", data: { label: "Researchers" }, position: { x: 0, y: 0 } },
 	{ id: "synthesizer", data: { label: "Synthesizer" }, position: { x: 0, y: 0 } },
 	{ id: "writer", data: { label: "Writer" }, position: { x: 0, y: 0 } },
 	{ id: "critic", data: { label: "Critic" }, position: { x: 0, y: 0 } },
 ];
+
+type ResearchModalState =
+	| {
+		mode: "closed";
+	  }
+	| {
+		mode: "add";
+		item: ResearchPlanItem;
+	  }
+	| {
+		mode: "edit";
+		item: ResearchPlanItem;
+	  }
+	| {
+		mode: "remove";
+		item: ResearchPlanItem;
+	  };
 
 function getLayoutedElements(nodes: Node[], edges: Edge[]) {
 	const g = new dagre.graphlib.Graph();
@@ -64,7 +106,34 @@ function getLayoutedElements(nodes: Node[], edges: Edge[]) {
 	return { nodes: layoutedNodes, edges };
 }
 
-export default function AgentGraph({ graphState }: Props) {
+function formatCheckpointLabel(nodeId: string | null) {
+	if (!nodeId) {
+		return "No pending checkpoint";
+	}
+
+	switch (nodeId) {
+		case "research_router":
+			return "Research Router";
+		case "researchers":
+			return "Researchers";
+		case "synthesizer":
+			return "Synthesizer";
+		case "writer":
+			return "Writer";
+		case "critic":
+			return "Critic";
+		default:
+			return formatNodeLabel(nodeId);
+	}
+}
+
+export default function AgentGraph({
+	graphState,
+	controlState,
+	onContinue,
+	onToggleAuto,
+	onResearchPlanChange,
+}: Props) {
 	const { activeNode, activeNodes, completedNodes, failedNodes, researcherProgress } = graphState;
 	const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
 	const [rfNodes, setRfNodes] = useNodesState([]);
@@ -73,6 +142,9 @@ export default function AgentGraph({ graphState }: Props) {
 	const streamingContent =
 		graphState.streamingContent ?? EMPTY_STREAMING_CONTENT;
 	const [selectedNode, setSelectedNode] = useState<string | null>(null);
+	const [researchModal, setResearchModal] = useState<ResearchModalState>({
+		mode: "closed",
+	});
 	const displayedSelectedNode =
 		graphState.lastEvent?.type === "RESET" ? null : selectedNode;
 
@@ -106,17 +178,72 @@ export default function AgentGraph({ graphState }: Props) {
 	// Dynamic researcher nodes
 	const researchItems =
 		graphState?.plannerOutput?.researchers ?? EMPTY_RESEARCH_ITEMS;
+	const canManageResearchPlan =
+		controlState?.waiting === true && controlState.pausedAt === "researchers";
+
+	const openAddResearcher = () => {
+		setResearchModal({
+			mode: "add",
+			item: {
+				id: createResearchPlanId(),
+				prompt: "",
+				mode: "web",
+			},
+		});
+	};
+
+	const openEditResearcher = (item: ResearchPlanItem) => {
+		setResearchModal({
+			mode: "edit",
+			item: { ...item },
+		});
+	};
+
+	const openRemoveResearcher = (item: ResearchPlanItem) => {
+		setResearchModal({
+			mode: "remove",
+			item: { ...item },
+		});
+	};
+
+	const updateResearchModalItem = (
+		patch: Partial<ResearchPlanItem>
+	) => {
+		setResearchModal((prev) => {
+			if (prev.mode === "closed" || prev.mode === "remove") {
+				return prev;
+			}
+
+			return {
+				...prev,
+				item: {
+					...prev.item,
+					...patch,
+				},
+			};
+		});
+	};
+
+	const closeResearchModal = () => {
+		setResearchModal({ mode: "closed" });
+	};
+
+	const submitResearchPlan = async (nextResearchPlan: ResearchPlanItem[]) => {
+		await onResearchPlanChange?.(nextResearchPlan);
+		closeResearchModal();
+	};
 
 	const dynamicResearchNodes = useMemo<Node[]>(() => {
 		return researchItems
 			.slice(0, visibleResearchCount)
-			.map((topic: string, index: number) => {
+			.map((item: ResearchPlanItem, index: number) => {
 				const progress = researcherProgress[`research_${index}`] ?? 0;
 				return {
 					id: `research_${index}`,
 					data: {
 						label: `Researcher ${index + 1}`,
-						topic,
+						topic: item.prompt,
+						mode: item.mode,
 						progress,
 					},
 					position: { x: 0, y: 0 },
@@ -124,32 +251,54 @@ export default function AgentGraph({ graphState }: Props) {
 			});
 	}, [researchItems, visibleResearchCount, researcherProgress]);
 
+	const showResearchersPlaceholder =
+		researchItems.length === 0 || visibleResearchCount === 0;
+
 	const nodes = useMemo<Node[]>(() => {
-		return [...BASE_NODES, ...dynamicResearchNodes];
-	}, [dynamicResearchNodes]);
+		if (showResearchersPlaceholder) {
+			return [...BASE_NODES, ...dynamicResearchNodes];
+		}
+
+		return [
+			...BASE_NODES.filter((node) => node.id !== "researchers"),
+			...dynamicResearchNodes,
+		];
+	}, [dynamicResearchNodes, showResearchersPlaceholder]);
 
 	const edges = useMemo<Edge[]>(() => {
 		const nextEdges: Edge[] = [
+			{ id: "e0", source: "planner", target: "research_router" },
+			{ id: "e0a", source: "research_router", target: "researchers" },
+			{ id: "e0b", source: "researchers", target: "synthesizer" },
 			{ id: "e1", source: "synthesizer", target: "writer" },
 			{ id: "e2", source: "writer", target: "critic" },
 		];
 
-		researchItems.slice(0, visibleResearchCount).forEach((_, index: number) => {
-			nextEdges.push({
-				id: `er_${index}`,
-				source: "planner",
-				target: `research_${index}`,
-			});
+		if (showResearchersPlaceholder) {
+			return nextEdges;
+		}
 
-			nextEdges.push({
-				id: `er2_${index}`,
-				source: `research_${index}`,
-				target: "synthesizer",
-			});
-		});
-
-		return nextEdges;
-	}, [researchItems, visibleResearchCount]);
+		return [
+			...nextEdges.filter(
+				(edge) =>
+					edge.source !== "research_router" &&
+					edge.target !== "researchers" &&
+					edge.source !== "researchers"
+			),
+			...researchItems.slice(0, visibleResearchCount).flatMap((_, index: number) => [
+				{
+					id: `er_${index}`,
+					source: "research_router",
+					target: `research_${index}`,
+				},
+				{
+					id: `er2_${index}`,
+					source: `research_${index}`,
+					target: "synthesizer",
+				},
+			]),
+		];
+	}, [researchItems, showResearchersPlaceholder, visibleResearchCount]);
 
 	useEffect(() => {
 		if (researchItems.length === 0) {
@@ -336,14 +485,27 @@ export default function AgentGraph({ graphState }: Props) {
 					}}
 				>
 					<h3 style={{ marginBottom: 20 }}>Researchers</h3>
+					<div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+						<Button
+							variant="outlined"
+							size="small"
+							onClick={openAddResearcher}
+							disabled={!canManageResearchPlan}
+						>
+							Add Researcher
+						</Button>
+						<div style={{ fontSize: 12, color: "#666", maxWidth: 140, textAlign: "right" }}>
+							{canManageResearchPlan
+								? "You can edit prompts and routing before research starts."
+								: "Editing unlocks while paused before Researchers."}
+						</div>
+					</div>
 
 					{researchItems.length === 0 ? (
 						<p style={{ color: "#666" }}>No researchers yet</p>
 					) : (
 						<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
-							{researchItems
-								.slice(0, visibleResearchCount)
-								.map((topic: string, index: number) => {
+							{researchItems.map((item: ResearchPlanItem, index: number) => {
 									const progress =
 										graphState?.researcherProgress?.[`research_${index}`] ?? 0;
 
@@ -362,7 +524,29 @@ export default function AgentGraph({ graphState }: Props) {
 												Researcher {index + 1}
 											</div>
 											<div style={{ fontSize: 12, color: "#555" }}>
-												{topic}
+												{item.prompt}
+											</div>
+											<div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+												Route: {item.mode.toUpperCase()}
+											</div>
+											<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+												<Button
+													variant="text"
+													size="small"
+													onClick={() => openEditResearcher(item)}
+													disabled={!canManageResearchPlan}
+												>
+													Edit
+												</Button>
+												<Button
+													variant="text"
+													size="small"
+													color="error"
+													onClick={() => openRemoveResearcher(item)}
+													disabled={!canManageResearchPlan}
+												>
+													Remove
+												</Button>
 											</div>
 
 											<div
@@ -402,6 +586,56 @@ export default function AgentGraph({ graphState }: Props) {
 					<h3 style={{ marginBottom: 20 }}>
 						Agent Thoughts
 					</h3>
+					<div
+						style={{
+							marginBottom: 16,
+							padding: 10,
+							background: "#fff",
+							border: "1px solid #ddd",
+							borderRadius: 8,
+							display: "flex",
+							flexDirection: "column",
+							gap: 8,
+						}}
+					>
+						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+							<button
+								onClick={() => {
+									void onContinue?.();
+								}}
+								disabled={!controlState?.sessionId || !controlState.waiting}
+								style={{
+									padding: "6px 10px",
+									cursor:
+										controlState?.sessionId && controlState.waiting
+											? "pointer"
+											: "not-allowed",
+								}}
+							>
+								Continue
+							</button>
+						</div>
+						<label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+							<input
+								type="checkbox"
+								checked={controlState?.autoProceed ?? false}
+								disabled={!controlState?.sessionId}
+								onChange={(event) => {
+									void onToggleAuto?.(event.target.checked);
+								}}
+							/>
+							Auto-run next stages
+						</label>
+						<div style={{ fontSize: 12, color: "#555" }}>
+							{controlState?.waiting
+								? `Paused before ${formatCheckpointLabel(controlState.pausedAt)}`
+								: controlState?.sessionId
+									? controlState.autoProceed
+										? "Running automatically"
+										: "Manual approval mode"
+									: "No active run control"}
+						</div>
+					</div>
 					{displayedSelectedNode ? (
 							<div>
 								<h3 style={{ marginTop: 20, marginBottom: 10 }}>
@@ -471,6 +705,103 @@ export default function AgentGraph({ graphState }: Props) {
 					)}
 				</div>
 			</div>
+			<Dialog open={researchModal.mode !== "closed"} onClose={closeResearchModal} fullWidth maxWidth="sm">
+				<DialogTitle>
+					{researchModal.mode === "add"
+						? "Add Researcher"
+						: researchModal.mode === "edit"
+							? "Edit Researcher"
+							: "Remove Researcher"}
+				</DialogTitle>
+				<DialogContent>
+					{researchModal.mode === "remove" ? (
+						<div style={{ paddingTop: 8, color: "#444" }}>
+							Remove this researcher task?
+							<div style={{ marginTop: 12, fontSize: 14 }}>
+								{researchModal.item.prompt}
+							</div>
+						</div>
+					) : researchModal.mode === "closed" ? null : (
+						<div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 8 }}>
+							<TextField
+								label="Research Prompt"
+								value={researchModal.item.prompt}
+								onChange={(event) => {
+									updateResearchModalItem({ prompt: event.target.value });
+								}}
+								fullWidth
+								multiline
+								minRows={4}
+							/>
+							<FormControl fullWidth>
+								<InputLabel id="research-mode-label">Routing Mode</InputLabel>
+								<Select
+									labelId="research-mode-label"
+									label="Routing Mode"
+									value={researchModal.item.mode}
+									onChange={(event: SelectChangeEvent<ResearchMode>) => {
+										updateResearchModalItem({
+											mode: event.target.value as ResearchMode,
+										});
+									}}
+								>
+									<MenuItem value="web">Web Search</MenuItem>
+									<MenuItem value="llm">LLM Only</MenuItem>
+								</Select>
+							</FormControl>
+						</div>
+					)}
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={closeResearchModal}>Cancel</Button>
+					{researchModal.mode === "remove" ? (
+						<Button
+							color="error"
+							onClick={() => {
+								void submitResearchPlan(
+									researchItems.filter((item) => item.id !== researchModal.item.id)
+								);
+							}}
+						>
+							Remove
+						</Button>
+					) : researchModal.mode === "closed" ? null : (
+						<Button
+							onClick={() => {
+								const trimmedPrompt = researchModal.item.prompt.trim();
+								if (!trimmedPrompt) {
+									return;
+								}
+
+								if (researchModal.mode === "add") {
+									void submitResearchPlan([
+										...researchItems,
+										{
+											...researchModal.item,
+											prompt: trimmedPrompt,
+										},
+									]);
+									return;
+								}
+
+								void submitResearchPlan(
+									researchItems.map((item) =>
+										item.id === researchModal.item.id
+											? {
+												...researchModal.item,
+												prompt: trimmedPrompt,
+											}
+											: item
+									)
+								);
+							}}
+							disabled={!researchModal.item.prompt.trim()}
+						>
+							Save
+						</Button>
+					)}
+				</DialogActions>
+			</Dialog>
 		</div>
 	);
 }
@@ -479,6 +810,10 @@ function formatNodeLabel(nodeId: string) {
 	if (nodeId.startsWith("research_")) {
 		const index = parseInt(nodeId.split("_")[1], 10);
 		return `Researcher ${index + 1}`;
+	}
+
+	if (nodeId === "research_router") {
+		return "Research Router";
 	}
 
 	// Capitalize other nodes

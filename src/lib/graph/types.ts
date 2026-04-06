@@ -1,3 +1,5 @@
+import type { RunSessionControl } from "@/lib/orchestrator/sessionControl";
+
 export type NodeId = string;
 
 export type GraphEvent = {
@@ -9,6 +11,8 @@ export type StepCallback = (data: GraphEvent) => void;
 
 export type ExecutionContext = {
 	signal?: AbortSignal;
+	beforeNode?: (nodeId: string, onStep?: StepCallback, signal?: AbortSignal) => Promise<void>;
+	sessionControl?: RunSessionControl;
 };
 
 export type GraphNode = {
