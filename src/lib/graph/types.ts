@@ -1,8 +1,15 @@
 export type NodeId = string;
 
+export type GraphEvent = {
+	step: string;
+	[key: string]: unknown;
+};
+
+export type StepCallback = (data: GraphEvent) => void;
+
 export type GraphNode = {
 	id: NodeId;
-	run: (state: GraphState, onStep?: (data: any) => void) => Promise<any>;
+	run: (state: GraphState, onStep?: StepCallback) => Promise<unknown>;
 };
 
 export type Edge = {
@@ -18,7 +25,7 @@ export type Graph = {
 
 export type GraphState = {
 	goal: string;
-	data: Record<string, any>;
+	data: Record<string, unknown>;
 	meta: {
 		attempts: Record<string, number>;
 	};

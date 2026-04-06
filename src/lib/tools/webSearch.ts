@@ -1,16 +1,19 @@
-import { callLLM } from "@/lib/llm/ollama";
+import {
+	formatWebResearchForAgent,
+	realWebSearch,
+	type SearchHit,
+	type WebResearchResult,
+} from "@/lib/tools/realWebSearch";
+
+export type { SearchHit, WebResearchResult };
 
 export async function webSearch(query: string): Promise<string> {
-	const prompt = `
-		Simulate a web search for the following query:
+	const research = await realWebSearch(query);
+	return formatWebResearchForAgent(research);
+}
 
-		"${query}"
-
-		Return:
-		- Key findings
-		- Trends
-		- Useful data points
-	`;
-
-	return await callLLM(prompt);
+export async function webSearchWithSources(
+	query: string
+): Promise<WebResearchResult> {
+	return realWebSearch(query);
 }

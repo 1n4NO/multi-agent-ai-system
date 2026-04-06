@@ -3,13 +3,14 @@ import { researcherAgent } from "@/lib/agents/researcher";
 import { synthesizerAgent } from "@/lib/agents/synthesizer";
 import { writerAgent } from "@/lib/agents/writer";
 import { criticAgent } from "@/lib/agents/critic";
+import { Graph, GraphState, StepCallback } from "@/lib/graph/types";
 import { parsePlanToTasks } from "@/lib/utils/parsePlan";
-import { webSearch } from "@/lib/tools/webSearch";
+import { formatWebResearchForAgent, realWebSearch } from "@/lib/tools/realWebSearch";
 
 async function streamText(
 	text: string,
 	nodeId: string,
-	onStep?: (data: any) => void
+	onStep?: StepCallback
 ) {
 	for (let i = 0; i < text.length; i += 5) {
 		const chunk = text.slice(i, i + 5);
@@ -24,14 +25,14 @@ async function streamText(
 	}
 }
 
-export function createGraph(goal: string) {
+export function createGraph(goal: string): Graph {
 	let tasks: string[] = [];
 
 	return {
 		nodes: {
 			planner: {
 				id: "planner",
-				run: async (state: any, onStep?: any) => {
+				run: async (_state: GraphState, onStep?: StepCallback) => {
 					const plan = await plannerAgent(goal);
 
 					// 🔥 STREAM OUTPUT
@@ -45,18 +46,26 @@ export function createGraph(goal: string) {
 
 			researchers: {
 				id: "researchers",
-				run: async (_state: any, onStep?: (data: any) => void) => {
+				run: async (_state: GraphState, onStep?: StepCallback) => {
 					const researchPromises = tasks.map(async (task, index) => {
-						const nodeId = `research_${index}`;
-						onStep?.({ step: `${nodeId}_start`, attempt: 1 });
+							const nodeId = `research_${index}`;
+							onStep?.({ step: `${nodeId}_start`, attempt: 1 });
+							let groundedResearch = "No web findings were available.";
 
-						// simulate minor incremental progress for UX (25/60/90) while running
-						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 10 });
+							// simulate minor incremental progress for UX (25/60/90) while running
+							onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 10 });
 
-						const webData = await webSearch(task);
-						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 40 });
+							try {
+								const webResearch = await realWebSearch(task);
+								groundedResearch = formatWebResearchForAgent(webResearch);
+							} catch (error) {
+								const message =
+									error instanceof Error ? error.message : "Unknown search error";
+								groundedResearch = `Web search failed for this task: ${message}`;
+							}
+							onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 55 });
 
-						const result = await researcherAgent(task + "\n" + webData);
+							const result = await researcherAgent(task, groundedResearch);
 
 						// 🔥 STREAM EACH RESEARCHER
 						await streamText(result, nodeId, onStep);
@@ -76,8 +85,11 @@ export function createGraph(goal: string) {
 
 			synthesizer: {
 				id: "synthesizer",
-				run: async (state: any, onStep?: any) => {
-					const output = await synthesizerAgent(state.data.researchers);
+				run: async (state: GraphState, onStep?: StepCallback) => {
+					const researchOutputs = Array.isArray(state.data.researchers)
+						? (state.data.researchers as string[])
+						: [];
+					const output = await synthesizerAgent(researchOutputs);
 
 					await streamText(output, "synthesizer", onStep);
 
@@ -87,11 +99,11 @@ export function createGraph(goal: string) {
 
 			writer: {
 				id: "writer",
-				run: async (state: any, onStep?: any) => {
+				run: async (state: GraphState, onStep?: StepCallback) => {
 					const output = await writerAgent(
 						goal,
-						state.data.planner,
-						state.data.synthesizer
+						typeof state.data.planner === "string" ? state.data.planner : "",
+						typeof state.data.synthesizer === "string" ? state.data.synthesizer : ""
 					);
 
 					await streamText(output, "writer", onStep);
@@ -102,11 +114,11 @@ export function createGraph(goal: string) {
 
 			critic: {
 				id: "critic",
-				run: async (state: any, onStep?: any) => {
+				run: async (state: GraphState, onStep?: StepCallback) => {
 					const output = await criticAgent(
 						goal,
-						state.data.planner,
-						state.data.writer
+						typeof state.data.planner === "string" ? state.data.planner : "",
+						typeof state.data.writer === "string" ? state.data.writer : ""
 					);
 
 					await streamText(output, "critic", onStep);
@@ -125,13 +137,14 @@ export function createGraph(goal: string) {
 			{ from: "writer", to: "critic" },
 
 			// 🔥 CONDITIONAL LOOP BACK
-			{
-				from: "critic",
-				to: "writer",
-				condition: (state: any) => {
-					const output = state.data.critic || "";
-					const match = output.match(/(\d+)%/);
-					const score = match ? parseInt(match[1]) : 100;
+				{
+					from: "critic",
+					to: "writer",
+					condition: (state: GraphState) => {
+						const output =
+							typeof state.data.critic === "string" ? state.data.critic : "";
+						const match = output.match(/(\d+)%/);
+						const score = match ? parseInt(match[1]) : 100;
 
 					return score < 80 &&
 						(state.meta.attempts["writer"] || 0) < 3;

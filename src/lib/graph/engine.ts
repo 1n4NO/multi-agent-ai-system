@@ -1,9 +1,9 @@
-import { Graph, GraphState } from "./types";
+import { Graph, GraphState, StepCallback } from "./types";
 
 export async function executeGraph(
   graph: Graph,
   initialState: GraphState,
-  onStep?: (data: any) => void
+  onStep?: StepCallback
 ) {
   const state = initialState;
 
