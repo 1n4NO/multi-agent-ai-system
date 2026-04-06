@@ -8,7 +8,7 @@
 
 > “What if instead of one AI, you had a team of AIs thinking together?”
 
-This project answers that.
+This project answers that and now wires in real research tooling plus manual checkpoints.
 
 It transforms a single prompt into a **multi-stage reasoning pipeline** where agents:
 
@@ -25,33 +25,34 @@ It transforms a single prompt into a **multi-stage reasoning pipeline** where ag
 ### 🧩 Multi-Agent Architecture
 
 * Planner → breaks down goals
-* Researcher → gathers insights
-* Writer → produces structured output
-* Critic → refines & improves
+* Research Router → classifies tasks into web vs. reasoning research (with rerun gating)
+* Researcher → gathers insights (DuckDuckGo + Puppeteer grounding, inline citations)
+* Writer → produces structured output enriched by citations
+* Critic → refines & improves recursively
 
 ---
 
-### ⚡ Real-Time Streaming (Like ChatGPT)
+### ⚡ Real-Time Streaming & Control
 
-* Server-Sent Events (SSE)
-* Step-by-step execution visibility
-* Live feedback loop
-
----
-
-### 🧠 Context-Aware Memory
-
-* Retains recent tasks
-* Influences future planning
-* Simulates evolving intelligence
+* Server-Sent Events (SSE) with cancellation-safe backend
+* Pause/Continue + auto-run toggle gating each stage (includes modal-based researcher edits)
+* Live visibility into research reruns, synthesizer prep, and critic retries
 
 ---
 
-### 📊 Visual Execution Graph
+### 🧠 Context-Aware Memory + Research Plan
 
-* Interactive pipeline visualization
-* Built with React Flow
-* Shows real-time agent activity
+* Recent runs influence the planner
+* Research plan stored with structured prompts, routing mode, and dirty-state flags
+* UI lets you add/edit/delete researchers while paused; rerun stale outputs before synthesizer
+
+---
+
+### 📊 Visual Execution Graph & Controls
+
+* React Flow graph now shows planner → router → researchers → rest of pipeline
+* Researchers pane lists prompts, routing mode, progress, and “Needs rerun” badges
+* Modal-driven add/edit/remove controls and rerun button while paused
 
 ---
 
@@ -86,10 +87,12 @@ Local LLM (Ollama)
 ## 🔄 Execution Flow
 
 ```
-Goal → Plan → Research → Draft → Critique → Final Output
+Goal → Planner → Research Router → Researchers ↺ (reruns) → Synthesizer → Writer → Critic
+                          ↑                     ↓            ↻
+                        manual review        dirty outputs  critic feedback
 ```
 
-Each stage improves the previous one — mimicking **human collaborative thinking**.
+Inline citations, sourced research blocks, and rerun gating keep each stage grounded before synthesis.
 
 ---
 
@@ -124,14 +127,14 @@ Create a restaurant marketing strategy
 
 ## 🧰 Tech Stack
 
-| Layer         | Tech                              |
-| ------------- | --------------------------------- |
-| Frontend      | Next.js (App Router), Material UI |
-| Backend       | API Routes (Node.js)              |
-| AI Engine     | Local LLM via Ollama              |
-| Orchestration | Custom multi-agent pipeline       |
-| Streaming     | Server-Sent Events (SSE)          |
-| Visualization | React Flow                        |
+| Layer         | Tech                                            |
+| ------------- | ----------------------------------------------- |
+| Frontend      | Next.js (App Router), Material UI, React Flow   |
+| Backend       | API Routes + SSE, session control over run graph |
+| AI Engine     | Local LLM via Ollama (planner/research/synth/critic/router) |
+| Orchestration | Custom orchestrator + session control that tracks research plan |
+| Streaming     | SSE with cancelable graph + citation catalog   |
+| Visualization | DAG layout + modal controls for research nodes |
 
 ---
 
@@ -189,22 +192,22 @@ npm run dev
 
 ## 🧠 Key Engineering Concepts
 
-* Multi-Agent Systems
-* AI Orchestration
-* Prompt Engineering
-* Streaming Architectures
-* State & Memory Management
-* System Design
+* Multi-Agent Systems with dynamic routing (planner → research router → researchers → critic)
+* Orchestrating rerun-safe pipelines via SSE + session-based pause/continue control
+* Structured research plans with editable routing and inline citations for downstream agents
+* UI/UX for real-time graph visualization, modal-based researcher editing, and rerun indicators
+* Streaming architectures that honor abort signals and keep the frontend in sync
+* System design combining offline LLMs, Puppeteer-backed grounding, and PDF citation export
 
 ---
 
 ## 🚀 Future Enhancements
 
-* Persistent memory (database)
-* Multi-user sessions
-* Parallel agent execution
-* Tool-using agents (web search, APIs)
-* Cloud deployment with remote inference
+* Persistent, queryable memory and research logs beyond the in-memory store
+* Multi-user/session-aware controls with saved research plans and citations
+* Configurable rerun policies and richer automations for custom agent routing
+* Deeper grounding with external data sources (APIs, knowledge graphs) and citation auditing
+* Remote deployment options that orchestrate multiple local or cloud-backed LLMs
 
 ---
 
@@ -212,11 +215,11 @@ npm run dev
 
 This project showcases:
 
-✔ System design thinking
-✔ Real-world AI architecture
-✔ Full-stack engineering
-✔ Performance optimization
-✔ Product-level UX
+✔ System design thinking for multi-agent orchestration
+✔ Streaming SSE + session control with manual checkpoints and rerun logic
+✔ Grounded research via DuckDuckGo/Puppeteer and inline citations
+✔ Interactive UI flow with React Flow, modal-based editing, and citation-aware exports
+✔ Fast local inference on Ollama with cancel-safe tooling
 
 ---
 
