@@ -15,6 +15,7 @@ import { useMemo } from "react";
 import dagre from "dagre";
 import isEqual from "lodash/isEqual";
 import {
+	Box,
 	Dialog,
 	DialogActions,
 	DialogContent,
@@ -25,8 +26,14 @@ import {
 	InputLabel,
 	MenuItem,
 	Select,
+	Typography,
+	Checkbox,
+	FormControlLabel,
 	type SelectChangeEvent,
 } from "@mui/material";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import AddIcon from "@mui/icons-material/Add";
 import type { GraphUIState } from "@/hooks/useGraphState";
 import type { SessionClientState } from "@/lib/orchestrator/sessionControl";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -183,6 +190,9 @@ export default function AgentGraph({
 	// Dynamic researcher nodes
 	const researchItems =
 		graphState?.plannerOutput?.researchers ?? EMPTY_RESEARCH_ITEMS;
+	const completedResearchCount = researchItems.filter((item) =>
+		completedNodes?.has(getResearchNodeId(item.id))
+	).length;
 	const dirtyResearchIds = controlState?.dirtyResearchIds ?? EMPTY_DIRTY_RESEARCH_IDS;
 	const dirtyResearchIdSet = useMemo(
 		() => new Set(dirtyResearchIds),
@@ -194,6 +204,9 @@ export default function AgentGraph({
 		controlState?.waiting === true && controlState.pausedAt === "synthesizer";
 	const canManageResearchPlan = isPausedBeforeResearchers || isPausedBeforeSynthesizer;
 	const mustRerunResearch = isPausedBeforeSynthesizer && dirtyResearchIds.length > 0;
+	const allResearchIdsCompleted =
+		researchItems.length > 0 &&
+		researchItems.every((item) => completedNodes?.has(getResearchNodeId(item.id)));
 
 	const openAddResearcher = () => {
 		setResearchModal({
@@ -461,7 +474,7 @@ export default function AgentGraph({
 		};
 
 		activeNodes?.forEach((nodeId: string) => {
-			addThought(nodeId, `🧠 ${formatNodeLabel(nodeId)} is thinking...`);
+			addThought(nodeId, `✨ ${formatNodeLabel(nodeId)} is thinking...`);
 		});
 
 		if (activeNode) {
@@ -479,7 +492,7 @@ export default function AgentGraph({
 		Object.entries(streamingContent).forEach(([nodeId, content]) => {
 			if (!content) return;
 
-			addThought(nodeId, `🧠 ${formatNodeLabel(nodeId)}:\n${content}`);
+			addThought(nodeId, `✨ ${formatNodeLabel(nodeId)}:\n${content}`);
 		});
 
 		return nextThoughts;
@@ -508,45 +521,104 @@ export default function AgentGraph({
 			</div>
 
 			{/* 🔥 RIGHT SIDE PANELS */}
-			<div
-				style={{
-					display: "flex",
-					width: 500,
-					borderLeft: "1px solid #ddd",
-					color: "#333",
-					fontFamily: "sans-serif",
-				}}
-			>
+				<div
+					style={{
+						display: "flex",
+						width: 500,
+						borderLeft: "1px solid var(--panel-border)",
+						color: "var(--text-color)",
+						fontFamily: "sans-serif",
+					}}
+				>
 				{/* 🧪 Researchers Panel */}
 				<div
 					style={{
 						flex: 1,
 						padding: 12,
 						overflowY: "auto",
-						background: "#fafafa",
-						borderRight: "1px solid #ddd",
+						background: "var(--card-bg)",
+						borderRight: "1px solid var(--panel-border)",
 						maxHeight: "calc(100vh - 200px)",
 					}}
 				>
-					<h3 style={{ marginBottom: 20 }}>Researchers</h3>
-					<div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+					<Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2 }}>
+						<Typography
+							variant="subtitle2"
+							sx={{ fontWeight: 600, fontSize: { xs: "1rem", md: "1.05rem" }, letterSpacing: 0.15 }}
+						>
+							Researchers
+						</Typography>
+						<Box
+							sx={{
+								height: 6,
+								borderRadius: 3,
+								background: "#e2e8f0",
+								overflow: "hidden",
+							}}
+						>
+							<Box
+								sx={{
+									height: "100%",
+									width: `${researchItems.length ? (completedResearchCount / researchItems.length) * 100 : 0}%`,
+									background: "linear-gradient(90deg, #2563eb, #4f46e5)",
+									transition: "width 0.3s ease",
+								}}
+							/>
+						</Box>
+						<Typography variant="caption" sx={{ color: "var(--text-color)" }}>
+							{researchItems.length
+								? `${completedResearchCount} / ${researchItems.length} complete`
+								: "No researchers yet"}
+						</Typography>
+					</Box>
+					<div style={{ marginBottom: 12, maxWidth: 240 }}>
 						<Button
 							variant="outlined"
-							size="small"
+							disableElevation
 							onClick={openAddResearcher}
 							disabled={!canManageResearchPlan}
+							sx={{
+								borderStyle: "dashed",
+								borderColor: "rgba(15,23,42,0.3)",
+								paddingY: 1.5,
+								paddingX: 2.5,
+								minWidth: 200,
+								textTransform: "none",
+								color: "rgba(15,23,42,0.9)",
+								borderRadius: 2.5,
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								gap: 6,
+								background: "rgba(255,255,255,0.9)",
+							}}
 						>
-							Add Researcher
+							<AddIcon
+								sx={{
+									fontSize: 18,
+									color: canManageResearchPlan
+										? "rgba(15,23,42,0.8)"
+										: "rgba(15,23,42,0.3)",
+								}}
+							/>
+							<Typography
+								sx={{ fontWeight: 600, fontSize: 14, whiteSpace: "nowrap" }}
+							>
+								Add Researcher
+							</Typography>
 						</Button>
-						<div style={{ fontSize: 12, color: "#666", maxWidth: 140, textAlign: "right" }}>
+						<Typography
+							variant="caption"
+							sx={{ color: "var(--text-color)", mt: 1, fontSize: 12 }}
+						>
 							{isPausedBeforeResearchers
 								? "You can edit prompts and routing before research starts."
 								: isPausedBeforeSynthesizer
 									? mustRerunResearch
 										? "Rerun changed research before continuing to Synthesizer."
-										: "You can still refine the research plan here."
+										: "You can still refine the plan here."
 									: "Editing unlocks while paused before Researchers or Synthesizer."}
-						</div>
+						</Typography>
 					</div>
 					{mustRerunResearch ? (
 						<div
@@ -554,10 +626,10 @@ export default function AgentGraph({
 								marginBottom: 12,
 								padding: 8,
 								borderRadius: 8,
-								background: "#fff3cd",
-								border: "1px solid #f0d98a",
+								background: "rgba(251, 191, 36, 0.12)",
+								border: "1px solid rgba(251, 191, 36, 0.5)",
 								fontSize: 12,
-								color: "#6d5200",
+								color: "#92400e",
 							}}
 						>
 							Changed researchers need fresh outputs before synthesis can continue.
@@ -578,7 +650,7 @@ export default function AgentGraph({
 					) : null}
 
 					{researchItems.length === 0 ? (
-						<p style={{ color: "#666" }}>No researchers yet</p>
+						<p style={{ color: "var(--foreground)" }}>No researchers yet</p>
 					) : (
 						<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
 							{researchItems.map((item: ResearchPlanItem, index: number) => {
@@ -587,45 +659,117 @@ export default function AgentGraph({
 									const isDirty = dirtyResearchIdSet.has(item.id);
 
 									return (
-										<li
-											key={item.id}
+									<li
+										key={item.id}
+										style={{
+											marginBottom: 12,
+											padding: 0,
+											borderRadius: 8,
+											background: "var(--card-bg)",
+											display: "flex",
+											overflow: "hidden",
+											border: "1px solid rgba(15,23,42,0.08)",
+											boxShadow: "0 6px 20px rgba(15,23,42,0.05)",
+										}}
+									>
+										<div
 											style={{
-												marginBottom: 12,
-												padding: 8,
-												borderRadius: 8,
-												background: "#fff",
-												border: "1px solid #ddd",
+												width: 4,
+												background: isDirty ? "#f97316" : "#1976d2",
+											}}
+										/>
+										<div
+											style={{
+												flex: 1,
+												padding: 14,
+												display: "flex",
+												flexDirection: "column",
+												gap: 6,
 											}}
 										>
-											<div style={{ fontWeight: 700 }}>
-												Researcher {index + 1}
-											</div>
-											{isDirty ? (
-												<div style={{ fontSize: 11, color: "#b26a00", marginTop: 2 }}>
-													Needs rerun
+											<div
+												style={{
+													display: "flex",
+													justifyContent: "space-between",
+													alignItems: "center",
+													gap: 8,
+												}}
+											>
+													<div
+														style={{
+															fontSize: 12,
+															color: "var(--text-color)",
+															textTransform: "uppercase",
+															letterSpacing: 0.4,
+															padding: "2px 6px",
+															borderRadius: 6,
+															background: "rgba(148, 163, 184, 0.12)",
+															display: "inline-flex",
+															alignItems: "center",
+															gap: 4,
+														}}
+													>
+													<span style={{ width: 6, height: 6, borderRadius: "50%", background: "#94a3b8" }} />
+													Researcher {index + 1}
 												</div>
-											) : null}
-											<div style={{ fontSize: 12, color: "#555" }}>
+												{isDirty && (
+													<Typography
+														variant="caption"
+														sx={{ color: "#b45309", fontWeight: 600 }}
+													>
+														Needs rerun
+													</Typography>
+												)}
+											</div>
+
+											<Typography
+												variant="body2"
+												sx={{ fontSize: 14, fontWeight: 500, color: "var(--text-color)" }}
+											>
 												{item.prompt}
+											</Typography>
+
+											<div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+												<span style={{ fontSize: 14 }}>🌐</span>
+												<Typography
+													variant="caption"
+													sx={{ color: "var(--text-color)", textTransform: "uppercase", fontWeight: 600 }}
+												>
+													{item.mode === "web" ? "Web Research" : "LLM Only"}
+												</Typography>
 											</div>
-											<div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
-												Route: {item.mode.toUpperCase()}
-											</div>
-											<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+
+											<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 												<Button
-													variant="text"
+													variant="outlined"
 													size="small"
-													onClick={() => openEditResearcher(item)}
 													disabled={!canManageResearchPlan}
+													onClick={() => openEditResearcher(item)}
+													sx={{
+														borderColor: "rgba(15,23,42,0.2)",
+														color: "#0f172a",
+														textTransform: "uppercase",
+														borderRadius: 999,
+														px: 3,
+													}}
 												>
 													Edit
 												</Button>
 												<Button
-													variant="text"
+													variant="outlined"
 													size="small"
-													color="error"
-													onClick={() => openRemoveResearcher(item)}
 													disabled={!canManageResearchPlan}
+													onClick={() => openRemoveResearcher(item)}
+													sx={{
+														borderColor: "rgba(244,63,94,0.5)",
+														color: "#dc2626",
+														textTransform: "uppercase",
+														borderRadius: 999,
+														px: 3,
+														"&:hover": {
+															borderColor: "#dc2626",
+														},
+													}}
 												>
 													Remove
 												</Button>
@@ -634,21 +778,23 @@ export default function AgentGraph({
 											<div
 												style={{
 													height: 6,
-													background: "#eee",
-													marginTop: 6,
+													background: "#e2e8f0",
+													marginTop: 4,
 													borderRadius: 999,
+													overflow: "hidden",
 												}}
 											>
 												<div
 													style={{
 														width: `${progress}%`,
 														height: "100%",
-														background: "#1976d2",
+														background: "#2563eb",
 														borderRadius: 999,
 													}}
 												/>
 											</div>
-										</li>
+										</div>
+									</li>
 									);
 								})}
 						</ul>
@@ -661,19 +807,23 @@ export default function AgentGraph({
 						flex: 1,
 						padding: 12,
 						overflowY: "auto",
-						background: "#f5f5f5",
+						background: "var(--card-bg)",
+						borderLeft: "1px solid var(--panel-border)",
 						maxHeight: "calc(100vh - 200px)",
 					}}
 				>
-					<h3 style={{ marginBottom: 20 }}>
+					<Typography
+						variant="subtitle2"
+						sx={{ fontWeight: 600, fontSize: { xs: "1rem", md: "1.05rem" }, letterSpacing: 0.15, mb: 2 }}
+					>
 						Agent Thoughts
-					</h3>
+					</Typography>
 					<div
 						style={{
 							marginBottom: 16,
 							padding: 10,
-							background: "#fff",
-							border: "1px solid #ddd",
+							background: "var(--card-bg)",
+							border: "1px solid var(--panel-border)",
 							borderRadius: 8,
 							display: "flex",
 							flexDirection: "column",
@@ -681,40 +831,61 @@ export default function AgentGraph({
 						}}
 					>
 						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-							<button
-								onClick={() => {
-									void onContinue?.();
-								}}
+							<Button
+								variant="contained"
+								color="primary"
+								className="continue-button"
+								startIcon={<PlayArrowIcon />}
 								disabled={
 									!controlState?.sessionId ||
 									!controlState.waiting ||
 									mustRerunResearch
 								}
-								style={{
-									padding: "6px 10px",
-									cursor:
-										controlState?.sessionId &&
-										controlState.waiting &&
-										!mustRerunResearch
-											? "pointer"
-											: "not-allowed",
+								sx={{
+									borderRadius: 20,
+									textTransform: "none",
+									boxShadow: "0 12px 25px rgba(37,99,235,0.3)",
+									py: 1,
+									px: 3,
+								}}
+								onClick={() => {
+									void onContinue?.();
 								}}
 							>
 								Continue
-							</button>
+							</Button>
 						</div>
-						<label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
-							<input
-								type="checkbox"
-								checked={controlState?.autoProceed ?? false}
-								disabled={!controlState?.sessionId}
-								onChange={(event) => {
-									void onToggleAuto?.(event.target.checked);
-								}}
-							/>
-							Auto-run next stages
-						</label>
-						<div style={{ fontSize: 12, color: "#555" }}>
+						<FormControlLabel
+							control={
+								<Checkbox
+									size="small"
+									checked={controlState?.autoProceed ?? false}
+									disabled={!controlState?.sessionId}
+									onChange={(event) => {
+										void onToggleAuto?.(event.target.checked);
+									}}
+									sx={{
+										color: "var(--text-color)",
+										borderColor: "var(--text-color)",
+										"& .MuiSvgIcon-root": {
+											color: "var(--text-color)",
+										},
+										"&.Mui-checked": {
+											color: "var(--text-color)",
+											"& .MuiSvgIcon-root": {
+												color: "var(--text-color)",
+											},
+										},
+									}}
+								/>
+							}
+							label={
+								<Typography variant="caption" sx={{ color: "var(--text-color)", mt: 0.5 }}>
+									Auto-run next stages
+								</Typography>
+							}
+						/>
+						<div style={{ fontSize: 12, color: "var(--text-color)", lineHeight: 1.5 }}>
 							{mustRerunResearch
 								? "Changed research must be rerun before continuing."
 								: controlState?.waiting
@@ -725,17 +896,54 @@ export default function AgentGraph({
 										: "Manual approval mode"
 									: "No active run control"}
 						</div>
+						<Box
+							sx={{
+								mt: 1,
+								px: 2,
+								py: 1,
+								borderRadius: 3,
+								background: mustRerunResearch ? "rgba(251, 191, 36, 0.12)" : "rgba(16, 185, 129, 0.12)",
+								border: mustRerunResearch ? "1px solid rgba(251, 191, 36, 0.5)" : "1px solid rgba(16, 185, 129, 0.5)",
+								display: "flex",
+								alignItems: "center",
+								gap: 1,
+							}}
+						>
+							<Box
+								sx={{
+									width: 8,
+									height: 8,
+									borderRadius: "50%",
+									background: mustRerunResearch ? "#f97316" : "#34d399",
+									animation: "pulseGlow 1.6s infinite",
+								}}
+							/>
+							<CheckCircleIcon
+								fontSize="small"
+								sx={{ color: mustRerunResearch ? "#f97316" : "#059669" }}
+							/>
+							<Typography variant="caption" sx={{ color: mustRerunResearch ? "#92400e" : "#065f46" }}>
+								{mustRerunResearch
+									? "Research updates detected—rerun required before synthesis."
+									: allResearchIdsCompleted
+										? "Research stage synchronized. Ready for the synthesizer."
+										: "Research still running. Stay paused until completion."}
+							</Typography>
+						</Box>
 					</div>
 					{displayedSelectedNode ? (
 							<div>
-								<h3 style={{ marginTop: 20, marginBottom: 10 }}>
-									{formatNodeLabel(displayedSelectedNode)}
-								</h3>
+							<Typography
+								variant="subtitle2"
+								sx={{ fontWeight: 600, fontSize: "1rem", letterSpacing: 0.15, marginTop: 2, marginBottom: 1 }}
+							>
+								{formatNodeLabel(displayedSelectedNode)}
+							</Typography>
 
 							<div
 								style={{
-									background: "#fff",
-									border: "1px solid #ddd",
+									background: "var(--card-bg)",
+									border: "1px solid var(--panel-border)",
 									borderRadius: 6,
 									padding: 10,
 								}}
@@ -761,36 +969,40 @@ export default function AgentGraph({
 							</button>
 						</div>
 					) : Object.keys(thoughts).length === 0 ? (
-						<p style={{ color: "#666" }}>
+						<p style={{ color: "var(--foreground)" }}>
 							Waiting for agents...
 						</p>
-					) : (
+					 ) : (
 						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-							{Object.entries(thoughts)
-								.sort((a, b) => b[1].timestamp - a[1].timestamp)
-								.map(([key, t]) => (
-									<div
-										key={key}
-										onClick={() => setSelectedNode(key)}
-										style={{
-											fontSize: 12,
-											padding: "6px 8px",
-											borderRadius: 6,
-											background: "#fff",
-											border: "1px solid #ddd",
-											cursor: "pointer",
-											transition: "all 0.2s",
-										}}
-										onMouseEnter={(e) =>
-											(e.currentTarget.style.background = "#f0f0f0")
-										}
-										onMouseLeave={(e) =>
-											(e.currentTarget.style.background = "#fff")
-										}
-									>
-										{t.text}
-									</div>
-								))}
+					{Object.entries(thoughts)
+						.sort((a, b) => b[1].timestamp - a[1].timestamp)
+						.map(([key, t]) => (
+							<div
+								key={key}
+								onClick={() => setSelectedNode(key)}
+								style={{
+									padding: "8px 10px",
+									borderRadius: 8,
+									background: "var(--card-bg)",
+									border: "1px solid var(--panel-border)",
+									cursor: "pointer",
+									transition: "all 0.2s",
+								}}
+								onMouseEnter={(e) =>
+									(e.currentTarget.style.background = "rgba(248, 250, 252, 1)")
+								}
+								onMouseLeave={(e) =>
+									(e.currentTarget.style.background = "var(--card-bg)")
+								}
+							>
+								<Typography
+									variant="body2"
+									sx={{ lineHeight: 1.5, fontSize: 12 }}
+								>
+									{t.text}
+								</Typography>
+							</div>
+						))}
 						</div>
 					)}
 				</div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	Container,
 	TextField,
@@ -10,6 +10,8 @@ import {
 	Box,
 	Stack,
 } from "@mui/material";
+import DarkModeIcon from "@mui/icons-material/DarkMode";
+import WbSunnyIcon from "@mui/icons-material/WbSunny";
 import { copyToClipboard, exportToPDF } from "@/lib/utils/export";
 import AgentGraph from "@/components/AgentGraph";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -133,6 +135,7 @@ export default function Home() {
 	const [goal, setGoal] = useState("");
 	const [logs, setLogs] = useState<LogEvent[]>([]);
 	const { state, dispatch } = useGraphState();
+	const [theme, setTheme] = useState<"light" | "dark">("light");
 	const [isRunning, setIsRunning] = useState(false);
 	const [controller, setController] = useState<AbortController | null>(null);
 	const [controlState, setControlState] = useState<SessionClientState | null>(null);
@@ -392,119 +395,212 @@ export default function Home() {
 		? `${finalContent}\n\n${finalCitations}`
 		: "";
 
+	useEffect(() => {
+		document.documentElement.setAttribute("data-theme", theme);
+	}, [theme]);
+
 
 	return (
-		<Container maxWidth={false} sx={{ mt: 4 }}>
-			<Typography variant="h4" sx={{ mb: 2 }}>
-				Multi-Agent AI System
-			</Typography>
-
-			<Paper sx={{ p: 1, mb: 2 }}>
-				<Stack direction="row" spacing={2}>
-					<TextField
-						fullWidth
-						label="Enter your goal"
-						value={goal}
-						onChange={(e) => setGoal(e.target.value)}
-					/>
-					<Button
-						variant="contained"
-						onClick={runAgents}
-						sx={{ whiteSpace: "nowrap", px: 3 }}
-						color={isRunning ? "error" : "primary"}
-					>
-						{isRunning ? "Cancel Run" : "Run Agents"}
-					</Button>
-				</Stack>
-			</Paper>
-
-			{/* 🔥 MAIN GRAPH AREA */}
-			<Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-				<ReactFlowProvider>
-					<AgentGraph
-						graphState={state}
-						controlState={controlState}
-						onContinue={
-							controlState?.sessionId
-								? async () => {
-									await sendControl({
-										action: "continue",
-										sessionId: controlState.sessionId,
-									});
-								}
-								: undefined
-						}
-						onRerunResearch={
-							controlState?.sessionId
-								? async () => {
-									await sendControl({
-										action: "rerun_dirty_research",
-										sessionId: controlState.sessionId,
-									});
-								}
-								: undefined
-						}
-						onToggleAuto={
-							controlState?.sessionId
-								? async (autoProceed: boolean) => {
-									await sendControl({
-										action: "set_auto",
-										sessionId: controlState.sessionId,
-										autoProceed,
-									});
-								}
-								: undefined
-						}
-						onResearchPlanChange={
-							controlState?.sessionId
-								? async (researchPlan: ResearchPlanItem[]) => {
-									await sendControl({
-										action: "set_research_plan",
-										sessionId: controlState.sessionId,
-										researchPlan,
-									});
-								}
-								: undefined
-						}
-					/>
-				</ReactFlowProvider>
-
-				{/* Logs */}
-				{/* <Paper sx={{ p: 2, maxHeight: 300, overflow: "auto" }}>
-					{logs.map((log, i) => (
-						<div key={i} style={{ marginBottom: 20 }}>
-							{log.data && typeof log.data === "string" ? (
-								<MarkdownRenderer content={log.data} />
-							) : (
-								<pre>{JSON.stringify(log, null, 2)}</pre>
-							)}
-						</div>
-					))}
-				</Paper> */}
-
-				{/* Actions */}
-				<Stack direction="row" spacing={2} justifyContent="flex-end">
-					<Button
-						variant="outlined"
-						disabled={!finalReport}
-						onClick={() => copyToClipboard(finalReport)}
-					>
-						Copy
-					</Button>
-
-					<Button
-						variant="contained"
-						disabled={!finalLog?.data}
-						onClick={async () => {
-							await exportToPDF("AI Report", finalLog?.data);
+	<Box
+		sx={{
+			minHeight: "100vh",
+			background: "var(--background)",
+			py: { xs: 4, md: 6 },
+			position: "relative",
+		}}
+	>
+		<Box
+			sx={{
+				position: "absolute",
+				top: { xs: 16, md: 24 },
+				right: { xs: 16, md: 32 },
+				zIndex: 10,
+			}}
+		>
+			<Button
+				variant="contained"
+				onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+				sx={{
+					minWidth: 44,
+					width: 44,
+					height: 44,
+					borderRadius: "50%",
+					padding: 0,
+					color: theme === "light" ? "#0f172a" : "#f6f4ff",
+					background:
+						theme === "light"
+							? "linear-gradient(180deg, #eef2ff, #c7d2fe)"
+							: "linear-gradient(180deg, #1f2937, #111827)",
+					boxShadow: "0 12px 24px rgba(59,130,246,0.3)",
+					transition: "transform 0.3s ease, background 0.5s ease",
+					"&:hover": {
+						transform: "translateY(-2px)",
+					},
+				}}
+			>
+				{theme === "light" ? (
+					<DarkModeIcon sx={{ color: "#111827" }} />
+				) : (
+					<WbSunnyIcon sx={{ color: "#fcd34d" }} />
+				)}
+			</Button>
+		</Box>
+			<Container maxWidth="lg">
+				<Paper
+					sx={{
+						background: "var(--card-bg)",
+						borderRadius: 4,
+						boxShadow: "0 20px 45px rgba(15, 23, 42, 0.12)",
+						p: { xs: 2, md: 3 },
+						mb: 3,
+					}}
+				>
+					<Box sx={{ display: "flex", alignItems: "baseline", gap: 2 }}>
+						<Typography
+							variant="h3"
+							component="h1"
+							sx={{ mb: 0, color: "var(--text-color)" }}
+						>
+							Insight Engine
+						</Typography>
+						<Typography
+							variant="subtitle2"
+							sx={{ color: "var(--text-color)", fontWeight: 400, fontSize: "1rem" }}
+						>
+							Collaborative Insight Studio
+						</Typography>
+					</Box>
+					<Box
+						sx={{
+							mt: 1,
+							display: "flex",
+							flexDirection: { xs: "column", md: "row" },
+							gap: 2,
 						}}
 					>
-						Export PDF
-					</Button>
-				</Stack>
+				<TextField
+					fullWidth
+					label="Enter your goal"
+					value={goal}
+					onChange={(e) => setGoal(e.target.value)}
+					InputProps={{
+						sx: {
+							background: "var(--card-bg)",
+							color: "var(--foreground)",
+							borderRadius: 2,
+						},
+					}}
+					InputLabelProps={{
+						sx: {
+							color: "var(--foreground)",
+						},
+					}}
+					inputProps={{
+						style: { color: "var(--foreground)" },
+					}}
+				/>
+						<Button
+							variant="contained"
+							onClick={runAgents}
+							sx={{ whiteSpace: "nowrap", px: 3 }}
+							color={isRunning ? "error" : "primary"}
+						>
+							{isRunning ? "Cancel Run" : "Run Agents"}
+						</Button>
+					</Box>
+				</Paper>
+
+				<Paper
+					sx={{
+						borderRadius: 5,
+						boxShadow: "0 35px 90px rgba(15, 23, 42, 0.18)",
+						overflow: "hidden",
+						background: "var(--card-bg)",
+					}}
+				>
+					<ReactFlowProvider>
+						<AgentGraph
+							graphState={state}
+							controlState={controlState}
+							onContinue={
+								controlState?.sessionId
+									? async () => {
+											await sendControl({
+												action: "continue",
+												sessionId: controlState.sessionId,
+											});
+									  }
+									: undefined
+							}
+							onRerunResearch={
+								controlState?.sessionId
+									? async () => {
+											await sendControl({
+												action: "rerun_dirty_research",
+												sessionId: controlState.sessionId,
+											});
+									  }
+									: undefined
+							}
+							onToggleAuto={
+								controlState?.sessionId
+									? async (autoProceed: boolean) => {
+											await sendControl({
+												action: "set_auto",
+												sessionId: controlState.sessionId,
+												autoProceed,
+											});
+									  }
+									: undefined
+							}
+							onResearchPlanChange={
+								controlState?.sessionId
+									? async (researchPlan: ResearchPlanItem[]) => {
+											await sendControl({
+												action: "set_research_plan",
+												sessionId: controlState.sessionId,
+												researchPlan,
+											});
+									  }
+									: undefined
+							}
+						/>
+					</ReactFlowProvider>
+				</Paper>
+
+				<Box sx={{ mt: 3, display: "flex", justifyContent: "flex-end" }}>
+					<Stack direction="row" spacing={2}>
+						<Button
+							variant="outlined"
+							disabled={!finalReport}
+							onClick={() => copyToClipboard(finalReport)}
+							sx={{ borderColor: "var(--panel-border)" }}
+						>
+							Copy
+						</Button>
+
+						<Button
+							variant="contained"
+							disabled={!finalLog?.data}
+							onClick={async () => {
+								await exportToPDF("AI Report", finalLog?.data);
+							}}
+						>
+							Export PDF
+						</Button>
+					</Stack>
+				</Box>
 
 				{finalContent ? (
-					<Paper sx={{ p: 3 }}>
+					<Paper
+						sx={{
+							mt: 3,
+							p: { xs: 2, md: 3 },
+							borderRadius: 4,
+							boxShadow: "0 18px 45px rgba(15, 23, 42, 0.09)",
+							background: "var(--card-bg)",
+						}}
+					>
 						<Stack spacing={3}>
 							<Box>
 								<Typography variant="h5" sx={{ mb: 2 }}>
@@ -519,7 +615,7 @@ export default function Home() {
 						</Stack>
 					</Paper>
 				) : null}
-			</Box>
-		</Container>
+			</Container>
+		</Box>
 	);
 }

@@ -1,13 +1,22 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f9fafb;
+  --foreground: #0f172a;
+  --text-color: #0f172a;
+  --card-bg: #ffffff;
+  --panel-border: rgba(15, 23, 42, 0.08);
+  --accent: #2563eb;
+  transition: background 0.5s ease, color 0.5s ease;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #f8fafc;
+  --text-color: #64748b;
+  --card-bg: #111827;
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --accent: #4f46e5;
 }
 
 html {
@@ -24,11 +33,37 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
+  color: var(--text-color);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Inter", "Roboto", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+  background: transparent;
+}
+
+ .MuiInputBase-root {
+  background: var(--card-bg);
+  color: var(--text-color);
+}
+
+.MuiInputBase-input::placeholder {
+  color: rgba(71, 85, 105, 0.7);
+}
+
+.MuiPaper-root {
+  background: var(--card-bg);
+  color: var(--foreground);
+}
+
+body[data-theme="dark"] .continue-button.Mui-disabled {
+  background-color: #68789c;
+  color: #f8fafc;
 }
 
 * {
@@ -45,5 +80,20 @@ a {
 @media (prefers-color-scheme: dark) {
   html {
     color-scheme: dark;
+  }
+}
+
+@keyframes pulseGlow {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.4;
   }
 }
