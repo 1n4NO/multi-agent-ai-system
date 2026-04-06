@@ -10,6 +10,8 @@
 
 This project answers that and now wires in real research tooling plus manual checkpoints.
 
+The Insight Engine acts as a guided multi-agent research assistant: a user drops in a goal, the planner breaks it into tasks, the research router routes each task to either web grounding or LLM reasoning, and the UI lets you inspect/add/edit researchers before synthesizer/writer/critic produce a polished output with citations. It’s built for product teams, consultants, or knowledge workers who want a transparent, step-by-step report rather than a single opaque response.
+
 It transforms a single prompt into a **multi-stage reasoning pipeline** where agents:
 
 * Plan
