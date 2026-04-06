@@ -65,11 +65,17 @@ function reducer(state: State, action: Action): State {
 		case "NODE_START": {
 			const activeNodes = new Set(state.activeNodes);
 			activeNodes.add(action.nodeId);
+			const completedNodes = new Set(state.completedNodes);
+			completedNodes.delete(action.nodeId);
+			const failedNodes = new Set(state.failedNodes);
+			failedNodes.delete(action.nodeId);
 
 			return {
 				...state,
 				activeNode: action.nodeId,
 				activeNodes,
+				completedNodes,
+				failedNodes,
 				attempts: {
 					...state.attempts,
 					[action.nodeId]: action.attempt ?? 1,
@@ -77,6 +83,10 @@ function reducer(state: State, action: Action): State {
 				researcherProgress: {
 					...state.researcherProgress,
 					[action.nodeId]: action.nodeId.startsWith("research_") ? 0 : state.researcherProgress[action.nodeId] || 0,
+				},
+				streamingContent: {
+					...state.streamingContent,
+					[action.nodeId]: "",
 				},
 				lastEvent: action,
 			};

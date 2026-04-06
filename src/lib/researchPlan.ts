@@ -10,6 +10,10 @@ export type ResearchPlanPayload = {
 	researchers: ResearchPlanItem[];
 };
 
+export function getResearchNodeId(itemId: string) {
+	return `research_${itemId}`;
+}
+
 export function createResearchPlanId() {
 	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
 		return crypto.randomUUID();

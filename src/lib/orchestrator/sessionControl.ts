@@ -11,7 +11,15 @@ export type ControlState = {
 
 export type SessionClientState = ControlState & {
 	researchPlan: ResearchPlanItem[];
+	dirtyResearchIds: string[];
 };
+
+type ResearchSyncHandler = (
+	researchPlan: ResearchPlanItem[],
+	dirtyResearchIds: string[]
+) => void;
+
+type ResearchRerunHandler = (dirtyResearchIds: string[]) => Promise<void>;
 
 type Waiter = {
 	nodeId: string;
@@ -25,6 +33,9 @@ export class RunSessionControl {
 	private autoProceed: boolean;
 	private pausedAt: string | null = null;
 	private researchPlan: ResearchPlanItem[] = [];
+	private dirtyResearchIds = new Set<string>();
+	private researchSyncHandler: ResearchSyncHandler | null = null;
+	private researchRerunHandler: ResearchRerunHandler | null = null;
 
 	constructor(
 		public readonly sessionId: string,
@@ -46,6 +57,7 @@ export class RunSessionControl {
 		return {
 			...this.getState(),
 			researchPlan: this.getResearchPlan(),
+			dirtyResearchIds: this.getDirtyResearchIds(),
 		};
 	}
 
@@ -53,8 +65,59 @@ export class RunSessionControl {
 		return this.researchPlan.map((item) => ({ ...item }));
 	}
 
+	getDirtyResearchIds() {
+		return Array.from(this.dirtyResearchIds);
+	}
+
+	registerResearchHandlers(
+		syncHandler: ResearchSyncHandler,
+		rerunHandler: ResearchRerunHandler
+	) {
+		this.researchSyncHandler = syncHandler;
+		this.researchRerunHandler = rerunHandler;
+	}
+
+	clearResearchHandlers() {
+		this.researchSyncHandler = null;
+		this.researchRerunHandler = null;
+	}
+
+	markResearchClean(researchIds: string[]) {
+		researchIds.forEach((researchId) => {
+			this.dirtyResearchIds.delete(researchId);
+		});
+		return this.getClientState();
+	}
+
 	setResearchPlan(researchPlan: ResearchPlanItem[]) {
+		const previousPlan = this.researchPlan;
+		const previousById = new Map(previousPlan.map((item) => [item.id, item]));
 		this.researchPlan = researchPlan.map((item) => ({ ...item }));
+		const nextIds = new Set(this.researchPlan.map((item) => item.id));
+		this.dirtyResearchIds.forEach((researchId) => {
+			if (!nextIds.has(researchId)) {
+				this.dirtyResearchIds.delete(researchId);
+			}
+		});
+
+		if (this.pausedAt === "synthesizer") {
+			this.researchPlan.forEach((item) => {
+				const previousItem = previousById.get(item.id);
+				if (!previousItem) {
+					this.dirtyResearchIds.add(item.id);
+					return;
+				}
+
+				if (
+					previousItem.prompt !== item.prompt ||
+					previousItem.mode !== item.mode
+				) {
+					this.dirtyResearchIds.add(item.id);
+				}
+			});
+		}
+
+		this.researchSyncHandler?.(this.getResearchPlan(), this.getDirtyResearchIds());
 		return this.getClientState();
 	}
 
@@ -115,6 +178,10 @@ export class RunSessionControl {
 	}
 
 	continueOnce() {
+		if (this.pausedAt === "synthesizer" && this.dirtyResearchIds.size > 0) {
+			return this.getClientState();
+		}
+
 		if (!this.waiter) {
 			return this.getClientState();
 		}
@@ -126,15 +193,31 @@ export class RunSessionControl {
 	setAutoProceed(autoProceed: boolean) {
 		this.autoProceed = autoProceed;
 
-		if (autoProceed && this.waiter) {
+		if (
+			autoProceed &&
+			this.waiter &&
+			!(this.pausedAt === "synthesizer" && this.dirtyResearchIds.size > 0)
+		) {
 			this.waiter.resolve();
 		}
 
 		return this.getClientState();
 	}
 
+	async rerunDirtyResearch() {
+		if (!this.researchRerunHandler || this.dirtyResearchIds.size === 0) {
+			return this.getClientState();
+		}
+
+		const dirtyResearchIds = this.getDirtyResearchIds();
+		await this.researchRerunHandler(dirtyResearchIds);
+		this.markResearchClean(dirtyResearchIds);
+		return this.getClientState();
+	}
+
 	close() {
 		this.closed = true;
+		this.clearResearchHandlers();
 
 		if (this.waiter) {
 			this.waiter.reject(createAbortError());

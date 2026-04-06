@@ -9,7 +9,7 @@ import ReactFlow, {
 	useNodesState,
 	useEdgesState,
 } from "reactflow";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "reactflow/dist/style.css";
 import { useMemo } from "react";
 import dagre from "dagre";
@@ -32,6 +32,7 @@ import type { SessionClientState } from "@/lib/orchestrator/sessionControl";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import {
 	createResearchPlanId,
+	getResearchNodeId,
 	type ResearchMode,
 	type ResearchPlanItem,
 } from "@/lib/researchPlan";
@@ -40,6 +41,7 @@ type Props = {
 	graphState: GraphUIState;
 	controlState: SessionClientState | null;
 	onContinue?: () => Promise<void>;
+	onRerunResearch?: () => Promise<void>;
 	onToggleAuto?: (autoProceed: boolean) => Promise<void>;
 	onResearchPlanChange?: (researchPlan: ResearchPlanItem[]) => Promise<void>;
 };
@@ -48,6 +50,7 @@ const nodeWidth = 150;
 const nodeHeight = 50;
 const EMPTY_STREAMING_CONTENT: Record<string, string> = {};
 const EMPTY_RESEARCH_ITEMS: ResearchPlanItem[] = [];
+const EMPTY_DIRTY_RESEARCH_IDS: string[] = [];
 const BASE_NODES: Node[] = [
 	{ id: "planner", data: { label: "Planner" }, position: { x: 0, y: 0 } },
 	{ id: "research_router", data: { label: "Research Router" }, position: { x: 0, y: 0 } },
@@ -131,6 +134,7 @@ export default function AgentGraph({
 	graphState,
 	controlState,
 	onContinue,
+	onRerunResearch,
 	onToggleAuto,
 	onResearchPlanChange,
 }: Props) {
@@ -139,6 +143,7 @@ export default function AgentGraph({
 	const [rfNodes, setRfNodes] = useNodesState([]);
 	const [rfEdges, setRfEdges] = useEdgesState([]);
 	const [visibleResearchCount, setVisibleResearchCount] = useState(0);
+	const previousResearchIdsRef = useRef<string[]>([]);
 	const streamingContent =
 		graphState.streamingContent ?? EMPTY_STREAMING_CONTENT;
 	const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -178,8 +183,17 @@ export default function AgentGraph({
 	// Dynamic researcher nodes
 	const researchItems =
 		graphState?.plannerOutput?.researchers ?? EMPTY_RESEARCH_ITEMS;
-	const canManageResearchPlan =
+	const dirtyResearchIds = controlState?.dirtyResearchIds ?? EMPTY_DIRTY_RESEARCH_IDS;
+	const dirtyResearchIdSet = useMemo(
+		() => new Set(dirtyResearchIds),
+		[dirtyResearchIds]
+	);
+	const isPausedBeforeResearchers =
 		controlState?.waiting === true && controlState.pausedAt === "researchers";
+	const isPausedBeforeSynthesizer =
+		controlState?.waiting === true && controlState.pausedAt === "synthesizer";
+	const canManageResearchPlan = isPausedBeforeResearchers || isPausedBeforeSynthesizer;
+	const mustRerunResearch = isPausedBeforeSynthesizer && dirtyResearchIds.length > 0;
 
 	const openAddResearcher = () => {
 		setResearchModal({
@@ -237,19 +251,26 @@ export default function AgentGraph({
 		return researchItems
 			.slice(0, visibleResearchCount)
 			.map((item: ResearchPlanItem, index: number) => {
-				const progress = researcherProgress[`research_${index}`] ?? 0;
+				const nodeId = getResearchNodeId(item.id);
+				const progress = researcherProgress[nodeId] ?? 0;
 				return {
-					id: `research_${index}`,
+					id: nodeId,
 					data: {
 						label: `Researcher ${index + 1}`,
 						topic: item.prompt,
 						mode: item.mode,
 						progress,
+						dirty: dirtyResearchIdSet.has(item.id),
 					},
 					position: { x: 0, y: 0 },
 				};
 			});
-	}, [researchItems, visibleResearchCount, researcherProgress]);
+	}, [dirtyResearchIdSet, researchItems, visibleResearchCount, researcherProgress]);
+
+	const researchItemIds = useMemo(
+		() => researchItems.map((item) => item.id),
+		[researchItems]
+	);
 
 	const showResearchersPlaceholder =
 		researchItems.length === 0 || visibleResearchCount === 0;
@@ -285,15 +306,15 @@ export default function AgentGraph({
 					edge.target !== "researchers" &&
 					edge.source !== "researchers"
 			),
-			...researchItems.slice(0, visibleResearchCount).flatMap((_, index: number) => [
+			...researchItems.slice(0, visibleResearchCount).flatMap((item) => [
 				{
-					id: `er_${index}`,
+					id: `er_${item.id}`,
 					source: "research_router",
-					target: `research_${index}`,
+					target: getResearchNodeId(item.id),
 				},
 				{
-					id: `er2_${index}`,
-					source: `research_${index}`,
+					id: `er2_${item.id}`,
+					source: getResearchNodeId(item.id),
 					target: "synthesizer",
 				},
 			]),
@@ -301,30 +322,53 @@ export default function AgentGraph({
 	}, [researchItems, showResearchersPlaceholder, visibleResearchCount]);
 
 	useEffect(() => {
-		if (researchItems.length === 0) {
-			requestAnimationFrame(() => {
+		const previousIds = previousResearchIdsRef.current;
+		const nextIds = researchItemIds;
+		previousResearchIdsRef.current = nextIds;
+
+		if (nextIds.length === 0) {
+			const frame = requestAnimationFrame(() => {
 				setVisibleResearchCount(0);
 			});
-			return;
+			return () => cancelAnimationFrame(frame);
 		}
 
-		// Reset when new plan arrives
-		requestAnimationFrame(() => {
-			setVisibleResearchCount(0);
-		});
+		const idsUnchanged =
+			previousIds.length === nextIds.length &&
+			previousIds.every((id, index) => id === nextIds[index]);
 
-		const interval = setInterval(() => {
-			setVisibleResearchCount((prev) => {
-				if (prev >= researchItems.length) {
-					clearInterval(interval);
-					return prev;
-				}
-				return prev + 1;
+		if (idsUnchanged) {
+			const frame = requestAnimationFrame(() => {
+				setVisibleResearchCount((prev) => Math.min(prev || nextIds.length, nextIds.length));
 			});
-		}, 350); // 🔥 speed control (adjust later)
+			return () => cancelAnimationFrame(frame);
+		}
 
-		return () => clearInterval(interval);
-	}, [researchItems]);
+		const allPreviousStillPresent = previousIds.every((id) => nextIds.includes(id));
+		const onlyAppendedAtEnd =
+			allPreviousStillPresent &&
+			nextIds.length > previousIds.length &&
+			previousIds.every((id, index) => id === nextIds[index]);
+
+		if (onlyAppendedAtEnd) {
+			const interval = setInterval(() => {
+				setVisibleResearchCount((prev) => {
+					if (prev >= nextIds.length) {
+						clearInterval(interval);
+						return prev;
+					}
+					return prev + 1;
+				});
+			}, 350);
+
+			return () => clearInterval(interval);
+		}
+
+		const frame = requestAnimationFrame(() => {
+			setVisibleResearchCount(nextIds.length);
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [researchItemIds]);
 
 	// Apply layout
 	const layouted = useMemo(() => getLayoutedElements(nodes, edges), [nodes, edges]);
@@ -495,11 +539,43 @@ export default function AgentGraph({
 							Add Researcher
 						</Button>
 						<div style={{ fontSize: 12, color: "#666", maxWidth: 140, textAlign: "right" }}>
-							{canManageResearchPlan
+							{isPausedBeforeResearchers
 								? "You can edit prompts and routing before research starts."
-								: "Editing unlocks while paused before Researchers."}
+								: isPausedBeforeSynthesizer
+									? mustRerunResearch
+										? "Rerun changed research before continuing to Synthesizer."
+										: "You can still refine the research plan here."
+									: "Editing unlocks while paused before Researchers or Synthesizer."}
 						</div>
 					</div>
+					{mustRerunResearch ? (
+						<div
+							style={{
+								marginBottom: 12,
+								padding: 8,
+								borderRadius: 8,
+								background: "#fff3cd",
+								border: "1px solid #f0d98a",
+								fontSize: 12,
+								color: "#6d5200",
+							}}
+						>
+							Changed researchers need fresh outputs before synthesis can continue.
+						</div>
+					) : null}
+					{isPausedBeforeSynthesizer ? (
+						<Button
+							variant="contained"
+							size="small"
+							onClick={() => {
+								void onRerunResearch?.();
+							}}
+							disabled={!mustRerunResearch}
+							sx={{ mb: 1.5 }}
+						>
+							Rerun Changed Research
+						</Button>
+					) : null}
 
 					{researchItems.length === 0 ? (
 						<p style={{ color: "#666" }}>No researchers yet</p>
@@ -507,11 +583,12 @@ export default function AgentGraph({
 						<ul style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
 							{researchItems.map((item: ResearchPlanItem, index: number) => {
 									const progress =
-										graphState?.researcherProgress?.[`research_${index}`] ?? 0;
+										graphState?.researcherProgress?.[getResearchNodeId(item.id)] ?? 0;
+									const isDirty = dirtyResearchIdSet.has(item.id);
 
 									return (
 										<li
-											key={index}
+											key={item.id}
 											style={{
 												marginBottom: 12,
 												padding: 8,
@@ -523,6 +600,11 @@ export default function AgentGraph({
 											<div style={{ fontWeight: 700 }}>
 												Researcher {index + 1}
 											</div>
+											{isDirty ? (
+												<div style={{ fontSize: 11, color: "#b26a00", marginTop: 2 }}>
+													Needs rerun
+												</div>
+											) : null}
 											<div style={{ fontSize: 12, color: "#555" }}>
 												{item.prompt}
 											</div>
@@ -603,11 +685,17 @@ export default function AgentGraph({
 								onClick={() => {
 									void onContinue?.();
 								}}
-								disabled={!controlState?.sessionId || !controlState.waiting}
+								disabled={
+									!controlState?.sessionId ||
+									!controlState.waiting ||
+									mustRerunResearch
+								}
 								style={{
 									padding: "6px 10px",
 									cursor:
-										controlState?.sessionId && controlState.waiting
+										controlState?.sessionId &&
+										controlState.waiting &&
+										!mustRerunResearch
 											? "pointer"
 											: "not-allowed",
 								}}
@@ -627,7 +715,9 @@ export default function AgentGraph({
 							Auto-run next stages
 						</label>
 						<div style={{ fontSize: 12, color: "#555" }}>
-							{controlState?.waiting
+							{mustRerunResearch
+								? "Changed research must be rerun before continuing."
+								: controlState?.waiting
 								? `Paused before ${formatCheckpointLabel(controlState.pausedAt)}`
 								: controlState?.sessionId
 									? controlState.autoProceed
@@ -808,8 +898,7 @@ export default function AgentGraph({
 
 function formatNodeLabel(nodeId: string) {
 	if (nodeId.startsWith("research_")) {
-		const index = parseInt(nodeId.split("_")[1], 10);
-		return `Researcher ${index + 1}`;
+		return "Researcher";
 	}
 
 	if (nodeId === "research_router") {

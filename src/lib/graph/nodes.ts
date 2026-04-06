@@ -8,6 +8,7 @@ import { ExecutionContext, Graph, GraphState, StepCallback } from "@/lib/graph/t
 import { parsePlanToTasks } from "@/lib/utils/parsePlan";
 import {
 	createResearchPlanPayload,
+	getResearchNodeId,
 	type ResearchPlanItem,
 } from "@/lib/researchPlan";
 import {
@@ -20,6 +21,143 @@ import {
 	type ResearchSourceGroup,
 } from "@/lib/tools/realWebSearch";
 import { abortableDelay, isAbortError, throwIfAborted } from "@/lib/utils/abort";
+
+type ResearchExecutionResult = {
+	researchId: string;
+	nodeId: string;
+	task: string;
+	output: string;
+	sources: ResearchSourceGroup["sources"];
+};
+
+function readResearchPlanFromState(state: GraphState) {
+	if (
+		state.data.researchPlan &&
+		typeof state.data.researchPlan === "object" &&
+		Array.isArray((state.data.researchPlan as { researchers?: unknown }).researchers)
+	) {
+		return (state.data.researchPlan as { researchers: ResearchPlanItem[] }).researchers ?? [];
+	}
+
+	return [];
+}
+
+function readResearchResultMap(state: GraphState) {
+	if (
+		state.data.researchResultMap &&
+		typeof state.data.researchResultMap === "object" &&
+		!Array.isArray(state.data.researchResultMap)
+	) {
+		return {
+			...(state.data.researchResultMap as Record<string, ResearchExecutionResult>),
+		};
+	}
+
+	return {} as Record<string, ResearchExecutionResult>;
+}
+
+function syncResearchStateFromResults(
+	state: GraphState,
+	researchPlan: ResearchPlanItem[],
+	resultMap: Record<string, ResearchExecutionResult>
+) {
+	const activeResearchIds = new Set(researchPlan.map((item) => item.id));
+	const nextResultMap = Object.fromEntries(
+		Object.entries(resultMap).filter(([researchId]) => activeResearchIds.has(researchId))
+	);
+	const orderedResults = researchPlan
+		.map((item) => nextResultMap[item.id])
+		.filter((result): result is ResearchExecutionResult => Boolean(result));
+	const researchSources: ResearchSourceGroup[] = orderedResults.map((result) => ({
+		nodeId: result.nodeId,
+		task: result.task,
+		sources: result.sources,
+	}));
+	const citationCatalog = buildCitationCatalog(researchSources);
+
+	state.data.researchPlan = { researchers: researchPlan };
+	state.data.researchResultMap = nextResultMap;
+	state.data.researchers = orderedResults.map((result) => result.output);
+	state.data.researchSources = researchSources;
+	state.data.citationCatalog = citationCatalog;
+}
+
+async function runResearchPlanItems(
+	researchPlan: ResearchPlanItem[],
+	state: GraphState,
+	onStep?: StepCallback,
+	context?: ExecutionContext,
+	targetResearchIds?: string[]
+) {
+	const existingResultMap = readResearchResultMap(state);
+	const targetIds = targetResearchIds ? new Set(targetResearchIds) : null;
+	const itemsToRun = targetIds
+		? researchPlan.filter((item) => targetIds.has(item.id))
+		: researchPlan;
+	const researchPromises = itemsToRun.map(async (planItem) => {
+		const nodeId = getResearchNodeId(planItem.id);
+		throwIfAborted(context?.signal);
+		onStep?.({ step: `${nodeId}_start`, attempt: 1 });
+		let groundedResearch = "No web findings were available.";
+		let consultedSources: ResearchSourceGroup["sources"] = [];
+		let searchErrorMessage: string | undefined;
+
+		onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 10 });
+
+		if (planItem.mode === "web") {
+			try {
+				const webResearch = await realWebSearch(planItem.prompt, context?.signal);
+				consultedSources = webResearch.results;
+				groundedResearch = formatWebResearchForAgent(webResearch);
+			} catch (error) {
+				if (isAbortError(error)) {
+					throw error;
+				}
+				const message = error instanceof Error ? error.message : "Unknown search error";
+				searchErrorMessage = message;
+				groundedResearch = `Web search failed for this task: ${message}`;
+			}
+		} else {
+			groundedResearch =
+				"This task was routed to LLM-only research. Use internal reasoning and do not assume external facts beyond general knowledge.";
+		}
+		onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 55 });
+
+		const result = await researcherAgent(
+			planItem.prompt,
+			groundedResearch,
+			context?.signal
+		);
+		const citationBlock = formatCitationBlock(
+			planItem.prompt,
+			consultedSources,
+			searchErrorMessage
+		);
+		const finalResearchOutput = `Mode: ${planItem.mode.toUpperCase()}\n\n${citationBlock}\n\n${result}`;
+
+		await streamText(finalResearchOutput, nodeId, onStep, context?.signal);
+		onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 80 });
+		onStep?.({ step: `${nodeId}_done`, data: finalResearchOutput });
+		onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 100 });
+
+		return {
+			researchId: planItem.id,
+			nodeId,
+			task: planItem.prompt,
+			output: finalResearchOutput,
+			sources: consultedSources,
+		} satisfies ResearchExecutionResult;
+	});
+
+	const results = await Promise.all(researchPromises);
+	const nextResultMap = { ...existingResultMap };
+	results.forEach((result) => {
+		nextResultMap[result.researchId] = result;
+	});
+	syncResearchStateFromResults(state, researchPlan, nextResultMap);
+
+	return results;
+}
 
 async function streamText(
 	text: string,
@@ -85,84 +223,44 @@ export function createGraph(goal: string): Graph {
 				id: "researchers",
 				run: async (state: GraphState, onStep?: StepCallback, context?: ExecutionContext) => {
 					const planFromSession = context?.sessionControl?.getResearchPlan() ?? [];
-					const planFromState =
-						state.data.researchPlan &&
-						typeof state.data.researchPlan === "object" &&
-						Array.isArray((state.data.researchPlan as { researchers?: unknown }).researchers)
-							? ((state.data.researchPlan as { researchers: ResearchPlanItem[] }).researchers ?? [])
-							: [];
+					const planFromState = readResearchPlanFromState(state);
 					const researchPlan = planFromSession.length > 0 ? planFromSession : planFromState;
-					const researchPromises = researchPlan.map(async (planItem, index) => {
-						const nodeId = `research_${index}`;
-						throwIfAborted(context?.signal);
-						onStep?.({ step: `${nodeId}_start`, attempt: 1 });
-						let groundedResearch = "No web findings were available.";
-						let consultedSources: ResearchSourceGroup["sources"] = [];
-						let searchErrorMessage: string | undefined;
-
-						// simulate minor incremental progress for UX (25/60/90) while running
-						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 10 });
-
-						if (planItem.mode === "web") {
-							try {
-								const webResearch = await realWebSearch(planItem.prompt, context?.signal);
-								consultedSources = webResearch.results;
-								groundedResearch = formatWebResearchForAgent(webResearch);
-							} catch (error) {
-								if (isAbortError(error)) {
-									throw error;
-								}
-								const message =
-									error instanceof Error ? error.message : "Unknown search error";
-								searchErrorMessage = message;
-								groundedResearch = `Web search failed for this task: ${message}`;
-							}
-						} else {
-							groundedResearch =
-								"This task was routed to LLM-only research. Use internal reasoning and do not assume external facts beyond general knowledge.";
+					context?.sessionControl?.registerResearchHandlers(
+						(nextResearchPlan, dirtyResearchIds) => {
+							syncResearchStateFromResults(
+								state,
+								nextResearchPlan,
+								readResearchResultMap(state)
+							);
+							onStep?.({
+								step: "research_plan",
+								data: { researchers: nextResearchPlan },
+							});
+							onStep?.({
+								step: "research_dirty_state",
+								data: { dirtyResearchIds },
+							});
+						},
+						async (dirtyResearchIds) => {
+							await runResearchPlanItems(
+								context?.sessionControl?.getResearchPlan() ?? readResearchPlanFromState(state),
+								state,
+								onStep,
+								context,
+								dirtyResearchIds
+							);
+							onStep?.({
+								step: "research_dirty_state",
+								data: { dirtyResearchIds: [] },
+							});
 						}
-						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 55 });
+					);
+					await runResearchPlanItems(researchPlan, state, onStep, context);
+					context?.sessionControl?.markResearchClean(researchPlan.map((item) => item.id));
 
-						const result = await researcherAgent(
-							planItem.prompt,
-							groundedResearch,
-							context?.signal
-						);
-						const citationBlock = formatCitationBlock(
-							planItem.prompt,
-							consultedSources,
-							searchErrorMessage
-						);
-						const finalResearchOutput = `Mode: ${planItem.mode.toUpperCase()}\n\n${citationBlock}\n\n${result}`;
-
-						// 🔥 STREAM EACH RESEARCHER
-						await streamText(finalResearchOutput, nodeId, onStep, context?.signal);
-						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 80 });
-
-						// final load for this researcher node
-						onStep?.({ step: `${nodeId}_done`, data: finalResearchOutput });
-						onStep?.({ step: "NODE_PROGRESS", nodeId, progress: 100 });
-
-						return {
-							nodeId,
-							task: planItem.prompt,
-							output: finalResearchOutput,
-							sources: consultedSources,
-						};
-					});
-
-					const results = await Promise.all(researchPromises);
-					const researchSources: ResearchSourceGroup[] = results.map((result) => ({
-						nodeId: result.nodeId,
-						task: result.task,
-						sources: result.sources,
-					}));
-					const citationCatalog = buildCitationCatalog(researchSources);
-
-					state.data.researchSources = researchSources;
-					state.data.citationCatalog = citationCatalog;
-
-					return results.map((result) => result.output);
+					return Array.isArray(state.data.researchers)
+						? (state.data.researchers as string[])
+						: [];
 				},
 			},
 

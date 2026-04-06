@@ -40,6 +40,8 @@ type LogEvent = {
 	autoProceed?: boolean;
 	pausedAt?: string | null;
 	waiting?: boolean;
+	researchPlan?: ResearchPlanItem[];
+	dirtyResearchIds?: string[];
 	[key: string]: unknown;
 };
 
@@ -138,6 +140,7 @@ export default function Home() {
 	const sendControl = async (
 		payload:
 			| { action: "continue"; sessionId: string }
+			| { action: "rerun_dirty_research"; sessionId: string }
 			| { action: "set_auto"; sessionId: string; autoProceed: boolean }
 			| {
 				action: "set_research_plan";
@@ -251,6 +254,12 @@ export default function Home() {
 								Array.isArray(parsed.researchPlan) &&
 								isResearchPlanPayload({ researchers: parsed.researchPlan })
 									? parsed.researchPlan
+									: [],
+							dirtyResearchIds:
+								Array.isArray(parsed.dirtyResearchIds)
+									? parsed.dirtyResearchIds.filter(
+										(researchId): researchId is string => typeof researchId === "string"
+									)
 									: [],
 						};
 						if (nextControlState.researchPlan.length > 0) {
@@ -420,6 +429,16 @@ export default function Home() {
 								? async () => {
 									await sendControl({
 										action: "continue",
+										sessionId: controlState.sessionId,
+									});
+								}
+								: undefined
+						}
+						onRerunResearch={
+							controlState?.sessionId
+								? async () => {
+									await sendControl({
+										action: "rerun_dirty_research",
 										sessionId: controlState.sessionId,
 									});
 								}

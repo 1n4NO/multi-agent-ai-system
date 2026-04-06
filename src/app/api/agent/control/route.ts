@@ -24,6 +24,10 @@ export async function POST(req: NextRequest) {
 		return NextResponse.json(session.continueOnce());
 	}
 
+	if (action === "rerun_dirty_research") {
+		return NextResponse.json(await session.rerunDirtyResearch());
+	}
+
 	if (action === "set_auto" && typeof autoProceed === "boolean") {
 		return NextResponse.json(session.setAutoProceed(autoProceed));
 	}
