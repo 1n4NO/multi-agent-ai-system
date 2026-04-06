@@ -187,7 +187,7 @@ export async function exportToPDF(title: string, data?: ExportableRunResult) {
 	addSection("Metrics Dashboard", "");
 
 	// 📊 SCORE
-	const score = extractScore(data.critic);
+	const score = extractScore(data.critic ?? "");
 
 	// Big score display
 	doc.setFont("Helvetica", "bold");
